@@ -1,0 +1,49 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="deep-sea" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#115e59"/>
+      <stop offset="100%" stop-color="#042f2e"/>
+    </linearGradient>
+    <linearGradient id="flow-line" x1="100" y1="100" x2="400" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <filter id="soft-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background container -->
+  <rect x="0" y="0" width="512" height="512" rx="128" fill="url(#deep-sea)"/>
+  
+  <!-- Subtle circular ripples background -->
+  <circle cx="256" cy="256" r="180" stroke="#ffffff" stroke-opacity="0.03" stroke-width="2"/>
+  <circle cx="256" cy="256" r="120" stroke="#ffffff" stroke-opacity="0.05" stroke-width="2"/>
+  
+  <g transform="translate(256, 260)" filter="url(#soft-glow)">
+    <!-- The main flow curve (Tail spine) -->
+    <!-- Starts top-center, curves down and rights -->
+    <path d="M-60 -160 Q-60 -50 0 0 T120 120" 
+          stroke="url(#flow-line)" stroke-width="12" stroke-linecap="round" fill="none"/>
+          
+    <!-- Nodes along the spine (representing structure) -->
+    <!-- 1. Start Node -->
+    <rect x="-100" y="-190" width="80" height="60" rx="12" fill="#ccfbf1" />
+    <rect x="-94" y="-184" width="68" height="48" rx="8" fill="#115e59" fill-opacity="0.5"/>
+    
+    <!-- 2. Decision/Middle Node -->
+    <path d="M0 -30 L30 0 L0 30 L-30 0 Z" fill="#2dd4bf" stroke="#ccfbf1" stroke-width="4"/>
+    
+    <!-- 3. Tail/End Node (Bifurcation like a fin) -->
+    <!-- Fin left -->
+    <path d="M120 120 Q100 180 60 170" stroke="#5eead4" stroke-width="8" stroke-linecap="round"/>
+    <!-- Fin right -->
+    <path d="M120 120 Q160 170 180 140" stroke="#5eead4" stroke-width="8" stroke-linecap="round"/>
+    
+    <!-- Floating particles/bubbles -->
+    <circle cx="40" cy="-60" r="6" fill="#5eead4" fill-opacity="0.6"/>
+    <circle cx="-40" cy="80" r="4" fill="#5eead4" fill-opacity="0.4"/>
+    <circle cx="140" cy="80" r="5" fill="#5eead4" fill-opacity="0.8"/>
+  </g>
+</svg>
