@@ -478,7 +478,7 @@ async function main() {
       if (currentBlock) {
         const childBlock = await logseq.Editor.insertBlock(
           currentBlock.uuid,
-          'graph TD\n    A[Start] --> B{Decision}\n    B -->|Yes| C[Action]\n    B -->|No| D[End]',
+          '```mermaid\ngraph TD\n    A[Start] --> B{Decision}\n    B -->|Yes| C[Action]\n    B -->|No| D[End]\n```',
           { sibling: false }
         )
         if (childBlock) {
