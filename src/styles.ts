@@ -13,16 +13,17 @@ export const BERMAID_STYLES = `
   .bermaid-container {
     width: 100%;
     overflow-x: auto;
-    padding: 8px 0;
+    padding: 0;
   }
   .bermaid-container svg {
     width: 100%;
     height: auto;
+    display: block;
   }
   .bermaid-copy-btn {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 4px;
+    right: 4px;
     background: var(--ls-primary-background-color, #3b82f6);
     color: white;
     border: none;
