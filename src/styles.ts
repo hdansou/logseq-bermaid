@@ -6,15 +6,19 @@ export const BERMAID_STYLES = `
     max-width: none;
     box-sizing: border-box;
     overflow: visible;
+    font-size: 0;
+    line-height: 0;
   }
   .bermaid-wrapper.bermaid-resizing {
     outline: 2px solid var(--ls-primary-background-color, #3b82f6);
     user-select: none;
   }
   .bermaid-container {
+    display: flex;
     width: 100%;
     overflow-x: auto;
     padding: 0;
+    cursor: zoom-in;
   }
   .bermaid-container svg {
     width: 100%;
@@ -119,5 +123,37 @@ export const BERMAID_STYLES = `
     font-family: monospace;
     font-size: 0.85em;
     white-space: pre-wrap;
+  }
+
+  .bermaid-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+    cursor: zoom-out;
+  }
+
+  .bermaid-lightbox-content {
+    width: min(96vw, 1800px);
+    max-height: 96vh;
+    overflow: auto;
+    background: var(--ls-primary-background-color, white);
+    border-radius: 8px;
+    padding: 16px;
+    box-sizing: border-box;
+    cursor: default;
+  }
+
+  .bermaid-lightbox-content svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: calc(96vh - 48px);
+    object-fit: contain;
   }
 `

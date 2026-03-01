@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite'
-import logseqDevPlugin from 'vite-plugin-logseq'
+import logseqSafeDevPlugin from './vite-logseq-safe-plugin'
 
 export default defineConfig({
-  plugins: [logseqDevPlugin()],
+  plugins: [logseqSafeDevPlugin()],
   base: './',
   build: {
     outDir: 'dist',

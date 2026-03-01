@@ -1,11 +1,12 @@
 import '@logseq/libs'
-import { renderMermaid } from 'beautiful-mermaid'
-import { THEMES } from 'beautiful-mermaid'
+import { renderMermaid, THEMES } from 'beautiful-mermaid'
 import type { RenderOptions } from 'beautiful-mermaid'
 import { AUTO_THEME, DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES } from './constants'
 import { BERMAID_STYLES } from './styles'
 import { svgToPngBlob } from './utils/svg'
 import { escapeHtml } from './utils/text'
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 let currentThemeMode: string = 'dark'
 
@@ -15,9 +16,11 @@ const svgCache = new Map<string, string>()
 /** In-memory width cache to avoid redundant async lookups */
 const widthCache = new Map<string, number>()
 
-/** Context menu state */
+/** Context menu visibility state */
 let contextMenuVisible = false
-let contextMenuBlockUuid: string | null = null
+
+/** Fullscreen lightbox visibility state */
+let fullscreenVisible = false
 
 /** Resize state */
 interface ResizeState {
@@ -38,27 +41,28 @@ function getSettings() {
 
 function buildRenderOptions(): RenderOptions {
   const { theme, transparentBg } = getSettings()
-
-  const opts: RenderOptions = {
-    transparent: transparentBg,
-  }
-
-  // If theme is 'auto', pick based on Logseq's current mode
   const resolvedTheme = theme === 'auto'
     ? AUTO_THEME[currentThemeMode] || 'tokyo-night'
     : theme
-
-  // beautiful-mermaid's THEMES object can be used directly,
-  // but renderMermaid accepts color options not a theme name.
-  // We'll import THEMES to resolve colors.
-  return { ...opts, ...(getThemeColors(resolvedTheme) || {}) }
+  return {
+    transparent: transparentBg,
+    ...(THEMES?.[resolvedTheme] ?? {}),
+  }
 }
 
-function getThemeColors(themeName: string): Partial<RenderOptions> | null {
-  if (THEMES && THEMES[themeName]) {
-    return THEMES[themeName]
-  }
-  return null
+/** Normalize DB/file-graph block content field */
+function getBlockText(block: any): string {
+  return block?.content || block?.title || ''
+}
+
+/** Return true when running inside a DB-based graph */
+async function isDbGraph(): Promise<boolean> {
+  return (logseq.App as any).checkCurrentIsDbGraph().catch(() => false)
+}
+
+/** Inject plugin UI into a renderer slot */
+function renderSlot(blockUuid: string, slot: string, template: string): void {
+  logseq.provideUI({ key: `bermaid-${blockUuid}`, slot, template })
 }
 
 /**
@@ -109,19 +113,14 @@ async function copyImageToClipboard(uuid: string): Promise<void> {
     const { transparentBg } = getSettings()
     const blob = await svgToPngBlob(svg, transparentBg)
     
-    // Try clipboard API with fallback to host scope
     const clipboardItem = new ClipboardItem({ 'image/png': blob })
-    
     try {
       await navigator.clipboard.write([clipboardItem])
     } catch {
-      // Fallback to host scope
-      const hostScope = await logseq.Experiments.ensureHostScope()
-      if (hostScope?.navigator?.clipboard) {
-        await hostScope.navigator.clipboard.write([clipboardItem])
-      } else {
-        throw new Error('Clipboard API not available')
-      }
+      const hostScope = await logseq.Experiments.ensureHostScope().catch(() => null)
+      const clipboard = hostScope?.navigator?.clipboard
+      if (!clipboard) throw new Error('Clipboard API not available')
+      await clipboard.write([clipboardItem])
     }
     
     logseq.UI.showMsg('✅ Diagram copied as PNG', 'success')
@@ -136,8 +135,6 @@ async function copyImageToClipboard(uuid: string): Promise<void> {
  */
 function showContextMenu(uuid: string, x: number, y: number): void {
   contextMenuVisible = true
-  contextMenuBlockUuid = uuid
-  
   logseq.provideUI({
     key: 'bermaid-context-menu',
     path: 'body',
@@ -152,12 +149,48 @@ function showContextMenu(uuid: string, x: number, y: number): void {
 }
 
 /**
+ * Show fullscreen lightbox for a rendered diagram
+ */
+function showFullscreen(uuid: string): void {
+  const svg = svgCache.get(uuid)
+  if (!svg) return
+
+  fullscreenVisible = true
+
+  logseq.provideUI({
+    key: 'bermaid-fullscreen',
+    path: 'body',
+    template: `
+      <div class="bermaid-lightbox" data-on-click="bermaidCloseFullscreen">
+        <div class="bermaid-lightbox-content" data-on-click="bermaidLightboxContentClick">
+          ${svg}
+        </div>
+      </div>
+    `,
+  })
+}
+
+/**
+ * Hide fullscreen lightbox
+ */
+function hideFullscreen(): void {
+  if (!fullscreenVisible) return
+
+  fullscreenVisible = false
+
+  logseq.provideUI({
+    key: 'bermaid-fullscreen',
+    path: 'body',
+    template: '',
+  })
+}
+
+/**
  * Hide context menu
  */
 function hideContextMenu(): void {
   if (contextMenuVisible) {
     contextMenuVisible = false
-    contextMenuBlockUuid = null
     logseq.provideUI({
       key: 'bermaid-context-menu',
       path: 'body',
@@ -176,8 +209,7 @@ async function getBlockWidth(uuid: string): Promise<number> {
   }
   
   try {
-    const isDbGraph = await (logseq.App as any).checkCurrentIsDbGraph()
-    if (isDbGraph) {
+    if (await isDbGraph()) {
       const block = await logseq.Editor.getBlock(uuid)
       const width = (block as any)?.properties?.['bermaid-width']
       if (width && typeof width === 'number') {
@@ -199,8 +231,7 @@ async function setBlockWidth(uuid: string, width: number): Promise<void> {
   widthCache.set(uuid, width)
   
   try {
-    const isDbGraph = await (logseq.App as any).checkCurrentIsDbGraph()
-    if (isDbGraph) {
+    if (await isDbGraph()) {
       await logseq.Editor.upsertBlockProperty(uuid, 'bermaid-width', width)
     }
   } catch (err) {
@@ -252,6 +283,17 @@ async function main() {
         const { x, y } = JSON.parse(rect)
         showContextMenu(uuid, x, y)
       }
+    },
+    async bermaidOpenFullscreen(e: any) {
+      const uuid = e.dataset?.blockUuid
+      if (!uuid) return
+      showFullscreen(uuid)
+    },
+    async bermaidCloseFullscreen() {
+      hideFullscreen()
+    },
+    async bermaidLightboxContentClick(e: any) {
+      e.stopPropagation?.()
     },
   })
 
@@ -362,11 +404,19 @@ async function main() {
       }
     }
 
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        hideContextMenu()
+        hideFullscreen()
+      }
+    }
+
     doc.addEventListener('mousemove', onMouseMove, true)
     doc.addEventListener('mousedown', onMouseDown, true)
     doc.addEventListener('mouseup', onMouseUp, true)
     doc.addEventListener('scroll', hideContextMenu, true)
     doc.addEventListener('contextmenu', onContextMenu, true)
+    doc.addEventListener('keydown', onKeyDown, true)
 
     offHooks.push(() => {
       doc.removeEventListener('mousemove', onMouseMove, true)
@@ -374,6 +424,7 @@ async function main() {
       doc.removeEventListener('mouseup', onMouseUp, true)
       doc.removeEventListener('scroll', hideContextMenu, true)
       doc.removeEventListener('contextmenu', onContextMenu, true)
+      doc.removeEventListener('keydown', onKeyDown, true)
     })
   }
 
@@ -389,6 +440,7 @@ async function main() {
 
   logseq.beforeunload(async () => {
     hideContextMenu()
+    hideFullscreen()
     resizeState = null
     for (const off of offHooks) {
       off()
@@ -413,45 +465,35 @@ async function main() {
 
     const blockUuid = payload.uuid
 
-    // Show loading state
-    logseq.provideUI({
-      key: `bermaid-${blockUuid}`,
-      slot,
-      template: `<div class="bermaid-loading">Rendering mermaid diagram...</div>`,
-    })
+    renderSlot(blockUuid, slot, `<div class="bermaid-loading">Rendering mermaid diagram...</div>`)
 
     try {
-      // Fetch block with children to get mermaid source
-      const block = await logseq.Editor.getBlock(blockUuid, {
-        includeChildren: true,
-      })
+      // The renderer slot can fire before the child mermaid block has been
+      // committed (e.g. immediately after /bermaid inserts the macro).
+      // Retry for up to ~1.5 s so we don't flash the "no child" error.
+      let block: any = null
+      let children: any[] = []
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        if (attempt > 0) await sleep(250)
+        block = await logseq.Editor.getBlock(blockUuid, { includeChildren: true }).catch(() => null)
+        children = block?.children || []
+        if (children.length > 0) break
+      }
 
       if (!block) {
-        logseq.provideUI({
-          key: `bermaid-${blockUuid}`,
-          slot,
-          template: `<div class="bermaid-error">Error: Block not found</div>`,
-        })
+        renderSlot(blockUuid, slot, `<div class="bermaid-error">Error: Block not found</div>`)
         return
       }
 
-      // Extract mermaid syntax from child blocks
-      const children = block.children || []
       if (children.length === 0) {
-        logseq.provideUI({
-          key: `bermaid-${blockUuid}`,
-          slot,
-          template: `<div class="bermaid-error">No child block found. Add a child block with mermaid syntax.</div>`,
-        })
+        renderSlot(blockUuid, slot, `<div class="bermaid-error">No child block found. Add a child block with mermaid syntax.</div>`)
         return
       }
 
-      // Get content from child blocks, joining them with newlines
       const mermaidLines: string[] = []
       for (const child of children) {
         if (typeof child === 'string') continue
-        // SDK normalizes title→content for DB graphs; check content first
-        const text = (child as any).content || (child as any).title || ''
+        const text = getBlockText(child)
         if (text) mermaidLines.push(text)
       }
 
@@ -463,30 +505,19 @@ async function main() {
         mermaidSyntax = fenceMatch[1].trim()
       }
       if (!mermaidSyntax) {
-        logseq.provideUI({
-          key: `bermaid-${blockUuid}`,
-          slot,
-          template: `<div class="bermaid-error">Child block is empty. Add mermaid syntax.</div>`,
-        })
+        renderSlot(blockUuid, slot, `<div class="bermaid-error">Child block is empty. Add mermaid syntax.</div>`)
         return
       }
 
-      // Render the diagram
       const svg = await renderDiagram(mermaidSyntax)
-      
-      // Cache the SVG for clipboard operations
       svgCache.set(blockUuid, svg)
-      
-      // Get persisted width
       const width = await getBlockWidth(blockUuid)
 
-      logseq.provideUI({
-        key: `bermaid-${blockUuid}`,
-        slot,
-        template: `
+      renderSlot(blockUuid, slot, `
           <div class="bermaid-wrapper" data-block-uuid="${blockUuid}" style="width: ${width}px;">
             <div class="bermaid-resize-handle bermaid-resize-left" data-side="left"></div>
             <div class="bermaid-container" 
+                 data-on-click="bermaidOpenFullscreen"
                  data-on-contextmenu="bermaidContextMenu"
                  data-block-uuid="${blockUuid}"
                  data-rect='{"x":0,"y":0}'
@@ -499,43 +530,111 @@ async function main() {
                     title="Copy as PNG">📋 Copy</button>
             <div class="bermaid-resize-handle bermaid-resize-right" data-side="right"></div>
           </div>
-        `,
-      })
+        `)
     } catch (err: any) {
       const message = err?.message || String(err)
-      logseq.provideUI({
-        key: `bermaid-${blockUuid}`,
-        slot,
-        template: `<div class="bermaid-error">Bermaid render error:\n${escapeHtml(message)}</div>`,
-      })
+      renderSlot(blockUuid, slot, `<div class="bermaid-error">Bermaid render error:\n${escapeHtml(message)}</div>`)
     }
   })
 
-  // --- Slash Command ---
-  logseq.Editor.registerSlashCommand('bermaid', async () => {
+  const insertBermaidTemplate = async (targetUuid?: string) => {
     try {
-      await logseq.Editor.insertAtEditingCursor('{{renderer :bermaid}}')
+      await sleep(100)
 
-      // Insert a child code block with mermaid language
-      const currentBlock = await logseq.Editor.getCurrentBlock()
-      if (currentBlock) {
-        const childBlock = await logseq.Editor.insertBlock(
-          currentBlock.uuid,
-          '```mermaid\ngraph TD\n    A[Start] --> B{Decision}\n    B -->|Yes| C[Action]\n    B -->|No| D[End]\n```',
-          { sibling: false }
-        )
-        if (childBlock) {
-          const isDbGraph = await (logseq.App as any).checkCurrentIsDbGraph()
-          if (isDbGraph) {
-            await logseq.Editor.upsertBlockProperty(childBlock.uuid, 'logseq.property.node/display-type', 'code')
-            await logseq.Editor.upsertBlockProperty(childBlock.uuid, 'logseq.property.code/lang', 'mermaid')
-          }
+      let parentBlock: any = null
+      if (targetUuid) {
+        for (let attempt = 1; attempt <= 5; attempt += 1) {
+          parentBlock = await logseq.Editor.getBlock(targetUuid).catch(() => null)
+          if (parentBlock?.uuid) break
+          await sleep(100)
         }
       }
+
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        if (parentBlock?.uuid) break
+        parentBlock = await logseq.Editor.getCurrentBlock().catch(() => null)
+        if (parentBlock?.uuid) break
+        await sleep(100)
+      }
+
+      if (!parentBlock?.uuid) {
+        throw new Error('No active block to insert /bermaid template')
+      }
+
+      // Exit editing mode so the block is no longer held by the editor.
+      // updateBlock on a block that is actively being edited is silently
+      // ignored (the live editor state takes precedence).
+      await logseq.Editor.exitEditingMode(true).catch(() => null)
+      await sleep(100)
+
+      let rendererUpdated = false
+      let lastUpdateError: unknown = null
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          await logseq.Editor.updateBlock(parentBlock.uuid, '{{renderer :bermaid}}')
+          rendererUpdated = true
+          break
+        } catch (error) {
+          lastUpdateError = error
+          const message = error instanceof Error ? error.message : String(error)
+          const retryable = message.includes('[deferred timeout]') || message.includes('entity id, got 0')
+          if (!retryable || attempt === 5) break
+          await sleep(300)
+        }
+      }
+
+      if (!rendererUpdated) {
+        const msg = lastUpdateError instanceof Error ? lastUpdateError.message : String(lastUpdateError ?? 'unknown error')
+        console.warn('Bermaid: Failed to update renderer block after retries', lastUpdateError)
+        logseq.UI.showMsg(`❌ Failed to add renderer to block: ${msg}`, 'error')
+        return
+      }
+
+      const childTemplate = '```mermaid\ngraph TD\n    A[Start] --> B{Decision}\n    B -->|Yes| C[Action]\n    B -->|No| D[End]\n```'
+      let childBlock: any = null
+      let lastInsertError: unknown = null
+
+      // Wait for the parent block update to be committed to the DB before inserting a child.
+      // In DB-based graphs, the entity may not be persisted immediately,
+      // causing "entity id, got 0" errors.
+      await sleep(300)
+
+      // Re-fetch the parent block to ensure we have the latest persisted UUID
+      const refreshed = await logseq.Editor.getBlock(parentBlock.uuid).catch(() => null)
+      const insertUuid = refreshed?.uuid ?? parentBlock.uuid
+
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          childBlock = await logseq.Editor.insertBlock(insertUuid, childTemplate, { sibling: false })
+          if (childBlock?.uuid) break
+        } catch (error) {
+          lastInsertError = error
+          const message = error instanceof Error ? error.message : String(error)
+          const retryable = message.includes('[deferred timeout]') || message.includes('entity id, got 0')
+          if (!retryable || attempt === 5) break
+          await sleep(300)
+        }
+      }
+
+      if (!childBlock?.uuid) {
+        if (lastInsertError) console.warn('Bermaid: Failed to insert child mermaid block after retries', lastInsertError)
+        return
+      }
+
+      // Avoid DB schema-specific child metadata writes here; they can fail on
+      // some graphs and are not required for Bermaid rendering.
     } catch (err) {
       console.error('Bermaid: Failed to insert template', err)
-      logseq.UI.showMsg('Failed to insert bermaid template', 'error')
+      logseq.UI.showMsg('❌ Failed to insert /bermaid template', 'error')
     }
+  }
+
+  // --- Slash Command ---
+  logseq.Editor.registerSlashCommand('bermaid', (event: any) => {
+    const targetUuid = event?.uuid || event?.blockUuid
+    setTimeout(() => {
+      void insertBermaidTemplate(targetUuid)
+    }, 0)
   })
 
   console.log('Bermaid plugin ready!')
