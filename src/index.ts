@@ -25,6 +25,7 @@ interface ResizeState {
   startWidth: number
   startX: number
   side: 'left' | 'right'
+  wrapperEl: HTMLElement
 }
 let resizeState: ResizeState | null = null
 
@@ -60,10 +61,39 @@ function getThemeColors(themeName: string): Partial<RenderOptions> | null {
   return null
 }
 
+/**
+ * Trim the empty top whitespace from a beautiful-mermaid SVG by adjusting
+ * the viewBox and height so the diagram content starts at the top.
+ */
+function trimSvgTopWhitespace(svg: string): string {
+  // Find all numeric y-attribute values to determine where content actually starts
+  const yValues = [...svg.matchAll(/\sy="([\d.]+)"/g)].map(m => parseFloat(m[1]))
+  if (yValues.length === 0) return svg
+
+  const minY = Math.min(...yValues)
+  if (minY <= 0) return svg
+
+  // Parse existing viewBox: "0 0 width height"
+  const vbMatch = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)
+  if (!vbMatch) return svg
+
+  const svgWidth = parseFloat(vbMatch[1])
+  const svgHeight = parseFloat(vbMatch[2])
+
+  // Keep a small buffer at the top
+  const BUFFER = 5
+  const trimAmount = Math.max(0, minY - BUFFER)
+  const newHeight = svgHeight - trimAmount
+
+  return svg
+    .replace(`viewBox="0 0 ${vbMatch[1]} ${vbMatch[2]}"`, `viewBox="0 ${trimAmount} ${svgWidth} ${newHeight}"`)
+    .replace(`height="${vbMatch[2]}"`, `height="${newHeight}"`)
+}
+
 async function renderDiagram(mermaidSyntax: string): Promise<string> {
   const opts = buildRenderOptions()
   const svg = await renderMermaid(mermaidSyntax, opts)
-  return svg
+  return trimSvgTopWhitespace(svg)
 }
 
 /**
@@ -235,21 +265,22 @@ async function main() {
 
   let hostDoc: Document | null = null
   try {
-    hostDoc = hostScope?.window?.top?.document ?? null
-  } catch {
-    console.warn('Bermaid: Could not access host document (cross-origin restriction)')
+    // ensureHostScope() returns the host window proxy; .document is most reliable
+    hostDoc = (hostScope as any)?.document
+      ?? (hostScope as any)?.window?.document
+      ?? (hostScope as any)?.window?.top?.document
+      ?? null
+    if (!hostDoc) {
+      console.warn('Bermaid: Could not resolve host document')
+    }
+  } catch (err) {
+    console.warn('Bermaid: Could not access host document', err)
   }
 
   if (hostDoc) {
     const doc = hostDoc
 
-    // Track cursor position for context menu
-    let lastCursorX = 0
-    let lastCursorY = 0
-    doc.addEventListener('mousemove', (e: MouseEvent) => {
-      lastCursorX = e.clientX
-      lastCursorY = e.clientY
-      
+    const onMouseMove = (e: MouseEvent) => {
       // Update context menu position attribute
       const containers = doc.querySelectorAll('.bermaid-container[data-on-contextmenu]')
       containers.forEach((el: any) => {
@@ -259,34 +290,32 @@ async function main() {
       // Handle resize dragging
       if (resizeState) {
         const delta = e.clientX - resizeState.startX
-        const wrapper: any = doc.querySelector(`.bermaid-wrapper[data-block-uuid="${resizeState.uuid}"]`)
+        const wrapper = resizeState.wrapperEl
         
-        if (wrapper) {
-          let newWidth: number
-          if (resizeState.side === 'right') {
-            newWidth = resizeState.startWidth + delta
-          } else { // left
-            newWidth = resizeState.startWidth - delta
-          }
-          
-          // Clamp width
-          const minWidth = 200
-          const maxWidth = Math.max(wrapper.parentElement?.offsetWidth || 1200, 1200)
-          newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth))
-          
-          wrapper.style.width = `${newWidth}px`
-          
-          // For left handle, adjust margin to keep right edge anchored
-          if (resizeState.side === 'left') {
-            const widthDiff = newWidth - resizeState.startWidth
-            wrapper.style.marginLeft = `${-widthDiff}px`
-          }
+        let newWidth: number
+        if (resizeState.side === 'right') {
+          newWidth = resizeState.startWidth + delta
+        } else { // left
+          newWidth = resizeState.startWidth - delta
+        }
+        
+        // Clamp width
+        const minWidth = 200
+        const maxWidth = Math.max(wrapper.parentElement?.offsetWidth || 1200, 1200)
+        newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth))
+        
+        wrapper.style.width = `${newWidth}px`
+        
+        // For left handle, adjust margin to keep right edge anchored
+        if (resizeState.side === 'left') {
+          const widthDiff = newWidth - resizeState.startWidth
+          wrapper.style.marginLeft = `${-widthDiff}px`
         }
       }
-    }, true)
+    }
 
     // Mouse down on resize handle
-    doc.addEventListener('mousedown', (e: MouseEvent) => {
+    const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (target?.classList?.contains('bermaid-resize-handle')) {
         e.preventDefault()
@@ -300,6 +329,7 @@ async function main() {
             startWidth: wrapper.offsetWidth,
             startX: e.clientX,
             side,
+            wrapperEl: wrapper,
           }
           wrapper.classList.add('bermaid-resizing')
         }
@@ -309,31 +339,42 @@ async function main() {
       if (!target?.closest('.bermaid-context-menu')) {
         hideContextMenu()
       }
-    }, true)
+    }
 
     // Mouse up - finish resize
-    doc.addEventListener('mouseup', async () => {
+    const onMouseUp = async () => {
       if (resizeState) {
-        const wrapper: any = doc.querySelector(`.bermaid-wrapper[data-block-uuid="${resizeState.uuid}"]`)
-        if (wrapper) {
-          wrapper.classList.remove('bermaid-resizing')
-          wrapper.style.marginLeft = '' // Clear temporary margin
-          
-          const finalWidth = wrapper.offsetWidth
-          await setBlockWidth(resizeState.uuid, finalWidth)
-        }
+        const wrapper = resizeState.wrapperEl
+        wrapper.classList.remove('bermaid-resizing')
+        wrapper.style.marginLeft = '' // Clear temporary margin
+        
+        const finalWidth = wrapper.offsetWidth
+        await setBlockWidth(resizeState.uuid, finalWidth)
         resizeState = null
       }
-    }, true)
+    }
 
     // Hide context menu on scroll or another context menu
-    doc.addEventListener('scroll', hideContextMenu, true)
-    doc.addEventListener('contextmenu', (e: MouseEvent) => {
+    const onContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target?.closest('.bermaid-container')) {
         hideContextMenu()
       }
-    }, true)
+    }
+
+    doc.addEventListener('mousemove', onMouseMove, true)
+    doc.addEventListener('mousedown', onMouseDown, true)
+    doc.addEventListener('mouseup', onMouseUp, true)
+    doc.addEventListener('scroll', hideContextMenu, true)
+    doc.addEventListener('contextmenu', onContextMenu, true)
+
+    offHooks.push(() => {
+      doc.removeEventListener('mousemove', onMouseMove, true)
+      doc.removeEventListener('mousedown', onMouseDown, true)
+      doc.removeEventListener('mouseup', onMouseUp, true)
+      doc.removeEventListener('scroll', hideContextMenu, true)
+      doc.removeEventListener('contextmenu', onContextMenu, true)
+    })
   }
 
   // --- Theme mode detection ---
@@ -347,6 +388,8 @@ async function main() {
   }
 
   logseq.beforeunload(async () => {
+    hideContextMenu()
+    resizeState = null
     for (const off of offHooks) {
       off()
     }

@@ -6,7 +6,6 @@
 ## Critical Issues (Must Fix)
 
 - [x] **Add icon.png file**
-
   - File: `/icon.png`
   - Current: Referenced in `package.json` (`logseq.icon: "./icon.png"`) but missing
   - Implemented: Added `/icon.png` (128x128 PNG, ~11KB)
@@ -43,7 +42,6 @@
 ## Highly Recommended
 
 - [x] **Add README.md**
-
   - File: `/README.md`
   - Current: Missing
   - Implemented: Added plugin README with description, install/build steps, usage, settings, screenshot, and credits
@@ -55,14 +53,12 @@
     - Credits to beautiful-mermaid library
 
 - [x] **Add LICENSE file**
-
   - File: `/LICENSE`
   - Current: MIT declared in package.json but no file
   - Implemented: Added standard MIT license text in project root
   - Action: Add MIT license text
 
 - [x] **Update package.json metadata**
-
   - File: `package.json`
   - Current: Missing author and repository fields
   - Implemented: Added `author` and `repository` fields
@@ -76,7 +72,6 @@
     ```
 
 - [x] **Fix dynamic require() for THEMES**
-
   - File: `src/index.ts` (lines 57-70)
   - Current: Uses `require()` with eslint-disable comment
   - Implemented: Replaced runtime `require()` with static `import { THEMES } from 'beautiful-mermaid'`
@@ -88,11 +83,11 @@
   - Implemented: Stored `onThemeModeChanged` off-hook and disposed all hooks in `logseq.beforeunload`
   - Action: Add `beforeunload` hook to cleanup event listeners:
     ```typescript
-    const offHooks: (() => void)[] = []
+    const offHooks: (() => void)[] = [];
     // Store all off-hooks
     logseq.beforeunload(async () => {
-      offHooks.forEach((off) => off())
-    })
+      offHooks.forEach((off) => off());
+    });
     ```
 
 ## Feature: Copy Image & Drag-to-Resize
@@ -221,19 +216,16 @@ To test the implementation:
 ## Nice to Have (Improvements)
 
 - [ ] **Enhance error messages**
-
   - File: `src/index.ts` (various error templates)
   - Current: Basic error messages
   - Action: Add more user-friendly messages with emoji indicators
 
 - [ ] **Improve TypeScript configuration**
-
   - File: `tsconfig.json`
   - Current: Minimal config
   - Action: Add `lib`, `resolveJsonModule`, `isolatedModules` options
 
 - [ ] **Optimize Vite configuration**
-
   - File: `vite.config.ts`
   - Current: Basic config
   - Action: Add `minify: 'terser'` and `sourcemap: false` for production builds
@@ -287,3 +279,50 @@ After implementing changes:
 - [Logseq Plugin Development Guide](../../../libs/development-notes/AGENTS.md)
 - [Plugin Samples](https://github.com/logseq/logseq-plugin-samples)
 - [API Documentation](https://plugins-doc.logseq.com)
+
+---
+
+## Production Readiness Audit (2026-03-01)
+
+### Top 3 (Start Here)
+
+- [x] **Pin production dependency versions**
+  - File: `/package.json`
+  - Current: `"beautiful-mermaid": "latest"`
+  - Action:
+    - Pin to a deterministic version (exact or constrained semver)
+    - Update lockfile to match pinned runtime version
+  - Why:
+    - Prevents surprise breakages from upstream publishes
+    - Improves reproducibility across local/CI/release builds
+  - Implemented (2026-03-01): Pinned to `"beautiful-mermaid": "1.1.3"` and updated `package-lock.json`
+
+- [x] **Clean up host document event listeners on unload**
+  - File: `src/index.ts`
+  - Current: Host listeners are attached for resize/context interactions, but only Logseq off-hooks are explicitly cleaned up
+  - Action:
+    - Track and remove host listeners during plugin unload
+    - Keep existing resize/copy/context behavior unchanged
+  - Why:
+    - Avoid duplicate handlers on plugin reload
+    - Reduce leak risk and unintended repeated side effects
+  - Implemented (2026-03-01): Added named host event handlers with explicit `removeEventListener` cleanup in `beforeunload`
+
+- [x] **Add CI workflow for pull requests**
+  - File: `.github/workflows/ci.yml` (new)
+  - Current: Release-only workflow exists; no standard PR CI gate
+  - Action:
+    - Add CI on `push`/`pull_request` running install + type/build checks
+  - Why:
+    - Catches regressions before release tags
+    - Enforces baseline build health in collaboration workflows
+  - Implemented (2026-03-01): Added `.github/workflows/ci.yml` (push to `main` + `pull_request`) running `npm ci`, `npm run typecheck`, and `npm run build`
+
+### Next Priorities
+
+- [ ] Re-render existing diagrams when theme mode changes
+- [ ] Align docs/manifest values across README/CLAUDE/marketplace template/package metadata
+- [ ] Add bounded cache cleanup policy for rendered SVG and width caches
+- [ ] Replace brittle SVG whitespace trim regex with DOM-safe parsing
+- [ ] Reduce per-mousemove DOM updates for context menu positioning
+- [ ] Track and document accepted upstream SDK vulnerability risk

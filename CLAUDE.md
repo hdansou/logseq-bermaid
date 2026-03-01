@@ -16,7 +16,7 @@ npm run build     # Production build → dist/
 
 ## Testing
 
-The Logseq web app runs at **http://localhost:3001**. If it's not running, start it with:
+The Logseq web app runs at **[http://localhost:3001](http://localhost:3001)**. If it's not running, start it with:
 
 ```bash
 cd /Users/dzu/Projects/src/github.com/logseq && yarn watch
@@ -28,6 +28,7 @@ Loading the plugin into the Logseq web app requires two separate processes:
 2. **Dev HTTP server** — `npx vite` (serves the plugin at `http://localhost:8080` with CORS headers)
 
 Then in Logseq:
+
 1. Enable **Developer mode** in Settings → Advanced
 2. Go to Plugins → `⋮` menu → "Load plugin from web url"
 3. Enter `http://localhost:8080` and click Install

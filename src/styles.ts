@@ -5,6 +5,7 @@ export const BERMAID_STYLES = `
     min-width: 200px;
     max-width: none;
     box-sizing: border-box;
+    overflow: visible;
   }
   .bermaid-wrapper.bermaid-resizing {
     outline: 2px solid var(--ls-primary-background-color, #3b82f6);
@@ -45,14 +46,13 @@ export const BERMAID_STYLES = `
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 16px;
+    width: 12px;
     cursor: col-resize;
-    opacity: 0;
-    transition: opacity 0.2s, background 0.2s;
     z-index: 5;
     display: flex;
     align-items: center;
     justify-content: center;
+    pointer-events: all;
   }
   .bermaid-resize-handle::after {
     content: '';
@@ -61,34 +61,32 @@ export const BERMAID_STYLES = `
     transform: translateY(-50%);
     width: 3px;
     height: 40px;
-    background: var(--ls-primary-background-color, #3b82f6);
+    background: var(--ls-link-text-color, #3b82f6);
     border-radius: 2px;
     box-shadow: 0 0 4px rgba(0,0,0,0.2);
     opacity: 0;
     transition: opacity 0.2s;
   }
   .bermaid-resize-left {
-    left: -8px;
+    left: 0;
   }
   .bermaid-resize-right {
-    right: -8px;
+    right: 0;
   }
   .bermaid-wrapper:hover .bermaid-resize-handle {
-    opacity: 1;
+    background: rgba(59, 130, 246, 0.06);
   }
   .bermaid-wrapper:hover .bermaid-resize-handle::after {
     opacity: 0.6;
   }
   .bermaid-resize-handle:hover {
-    background: rgba(59, 130, 246, 0.1);
+    background: rgba(59, 130, 246, 0.15);
   }
   .bermaid-resize-handle:hover::after {
     opacity: 1 !important;
-    background: var(--ls-link-text-color, #3b82f6);
   }
   .bermaid-wrapper.bermaid-resizing .bermaid-resize-handle::after {
     opacity: 1 !important;
-    background: var(--ls-link-text-color, #3b82f6);
   }
   .bermaid-context-menu {
     position: fixed;
