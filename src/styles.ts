@@ -27,24 +27,41 @@ export const BERMAID_STYLES = `
   }
   .bermaid-copy-btn {
     position: absolute;
-    top: 4px;
-    right: 4px;
-    background: var(--ls-primary-background-color, #3b82f6);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 6px 10px;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    color: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.2s;
-    font-size: 12px;
+    transition: opacity 0.15s, background 0.15s, border-color 0.15s, transform 0.1s;
     z-index: 10;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    flex-shrink: 0;
   }
   .bermaid-wrapper:hover .bermaid-copy-btn {
     opacity: 1;
   }
   .bermaid-copy-btn:hover {
-    background: var(--ls-primary-background-color-hover, #2563eb);
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.5);
+    color: white;
+    transform: scale(1.08);
+  }
+  .bermaid-copy-btn:active {
+    transform: scale(0.95);
+  }
+  .bermaid-copy-btn svg {
+    display: block;
+    pointer-events: none;
   }
   .bermaid-resize-handle {
     position: absolute;

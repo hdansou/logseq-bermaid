@@ -131,7 +131,8 @@ async function copyImageToClipboard(uuid: string): Promise<void> {
     try {
       await navigator.clipboard.write([clipboardItem])
     } catch {
-      const hostScope = await logseq.Experiments.ensureHostScope().catch(() => null)
+      let hostScope: any = null
+      try { hostScope = await logseq.Experiments.ensureHostScope() } catch { /* ignore */ }
       const clipboard = hostScope?.navigator?.clipboard
       if (!clipboard) throw new Error('Clipboard API not available')
       await clipboard.write([clipboardItem])
@@ -369,7 +370,7 @@ async function main() {
   // --- Host Scope Event Listeners for Resize/Zoom/Pan ---
   let hostScope: any = null
   try {
-    hostScope = await logseq.Experiments.ensureHostScope()
+    hostScope = await Promise.resolve(logseq.Experiments.ensureHostScope())
   } catch (err) {
     console.warn('Could not get host scope for resize:', err)
   }
@@ -646,7 +647,12 @@ async function main() {
             <button class="bermaid-copy-btn"
                     data-on-click="bermaidCopyImage"
                     data-block-uuid="${blockUuid}"
-                    title="Copy as PNG">📋 Copy</button>
+                    title="Copy as PNG">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
             <div class="bermaid-resize-handle bermaid-resize-right" data-side="right"></div>
           </div>
         `)

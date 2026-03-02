@@ -375,6 +375,16 @@ After implementing changes:
   - Root cause: The macro renderer slot fires the moment `{{renderer :bermaid}}` lands, before `insertBermaidTemplate` has finished inserting the child mermaid block (~300 ms+ later), so the first render sees no children
   - Fix: Added a retry loop in the renderer (up to 6 × 250 ms ≈ 1.5 s) that re-fetches the block until children appear, absorbing the insertion delay without flashing the error state
 
+- [x] **Fix copy button crash: `ensureHostScope(...).catch is not a function`**
+  - File: `src/index.ts` (`copyImageToClipboard`, `main` host scope setup)
+  - Root cause: `logseq.Experiments.ensureHostScope()` returns a plain synchronous value in the current Logseq version, not a Promise; calling `.catch()` on it threw a runtime TypeError
+  - Fix: Replaced `.catch()` chain with `try/catch` in the clipboard fallback path; wrapped the host scope setup call in `Promise.resolve()` to handle both sync and async returns
+
+- [x] **Redesign copy button**
+  - File: `src/index.ts`, `src/styles.ts`
+  - Problem: Wide `📋 Copy` text button with `var(--ls-primary-background-color)` rendered as a native OS system button on some themes
+  - Fix: Replaced with a compact 30×30 px icon-only button using an inline SVG clipboard icon; frosted-glass dark background (`rgba(0,0,0,0.45)` + `backdrop-filter: blur`) works on any diagram theme without depending on CSS variables; scale animation on hover/active
+
 ### Next Priorities
 
 - [ ] Re-render existing diagrams when theme mode changes

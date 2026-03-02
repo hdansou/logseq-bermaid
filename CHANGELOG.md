@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
+## [0.2.1] - 2026-03-01
+
+### Fixed
+
+- **Copy button crash** — `logseq.Experiments.ensureHostScope()` returns a plain value (not a Promise) in the current Logseq version; calling `.catch()` on it threw `is not a function`. Both call sites now use `try/catch` (clipboard fallback) and `Promise.resolve()` (host scope setup) to handle both sync and async returns safely.
+- **Copy button redesign** — replaced the wide `📋 Copy` text button (whose background was incorrectly inheriting a theme variable, rendering as a native OS system button) with a compact 30×30 px icon-only button using an inline SVG clipboard icon and a frosted-glass dark background that works on any diagram theme.
+
 ## [0.2.0] - 2026-03-01
 
 ### Added
