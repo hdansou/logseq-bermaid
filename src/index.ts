@@ -22,6 +22,20 @@ let contextMenuVisible = false
 /** Fullscreen lightbox visibility state */
 let fullscreenVisible = false
 
+/** Lightbox zoom/pan state */
+let lightboxZoom = 1
+let lightboxPanX = 0
+let lightboxPanY = 0
+
+/** Lightbox pan-drag state */
+interface LightboxDragState {
+  startX: number
+  startY: number
+  startPanX: number
+  startPanY: number
+}
+let lightboxDragState: LightboxDragState | null = null
+
 /** Resize state */
 interface ResizeState {
   uuid: string
@@ -155,15 +169,30 @@ function showFullscreen(uuid: string): void {
   const svg = svgCache.get(uuid)
   if (!svg) return
 
+  // Reset zoom/pan for each fresh open
+  lightboxZoom = 1
+  lightboxPanX = 0
+  lightboxPanY = 0
+  lightboxDragState = null
   fullscreenVisible = true
 
   logseq.provideUI({
     key: 'bermaid-fullscreen',
     path: 'body',
     template: `
-      <div class="bermaid-lightbox" data-on-click="bermaidCloseFullscreen">
+      <div class="bermaid-lightbox">
+        <div class="bermaid-lightbox-backdrop" data-on-click="bermaidCloseFullscreen"></div>
+        <button class="bermaid-lightbox-close" data-on-click="bermaidCloseFullscreen" title="Close (Esc)">✕</button>
+        <div class="bermaid-zoom-controls">
+          <button class="bermaid-zoom-btn" data-on-click="bermaidZoomOut" title="Zoom out">−</button>
+          <span class="bermaid-zoom-level">100%</span>
+          <button class="bermaid-zoom-btn" data-on-click="bermaidZoomIn" title="Zoom in">+</button>
+          <button class="bermaid-zoom-btn" data-on-click="bermaidZoomReset" title="Reset zoom &amp; pan">⊙</button>
+        </div>
         <div class="bermaid-lightbox-content" data-on-click="bermaidLightboxContentClick">
-          ${svg}
+          <div class="bermaid-lightbox-zoom-container" style="transform: scale(1) translate(0px, 0px); transform-origin: center center;">
+            ${svg}
+          </div>
         </div>
       </div>
     `,
@@ -177,6 +206,10 @@ function hideFullscreen(): void {
   if (!fullscreenVisible) return
 
   fullscreenVisible = false
+  lightboxDragState = null
+  lightboxZoom = 1
+  lightboxPanX = 0
+  lightboxPanY = 0
 
   logseq.provideUI({
     key: 'bermaid-fullscreen',
@@ -266,6 +299,23 @@ async function main() {
   // --- CSS ---
   logseq.provideStyle(BERMAID_STYLES)
 
+  // hostDoc is declared here (before provideModel) so that model handler
+  // closures can reference it even though it is resolved later in main().
+  let hostDoc: Document | null = null
+
+  /** Directly mutate the lightbox DOM to update zoom/pan without re-rendering */
+  function updateLightboxTransform(): void {
+    if (!hostDoc || !fullscreenVisible) return
+    const container = (hostDoc as Document).querySelector('.bermaid-lightbox-zoom-container') as HTMLElement | null
+    if (container) {
+      container.style.transform = `scale(${lightboxZoom}) translate(${lightboxPanX}px, ${lightboxPanY}px)`
+    }
+    const levelEl = (hostDoc as Document).querySelector('.bermaid-zoom-level') as HTMLElement | null
+    if (levelEl) {
+      levelEl.textContent = `${Math.round(lightboxZoom * 100)}%`
+    }
+  }
+
   // --- Event Handlers Model ---
   logseq.provideModel({
     async bermaidCopyImage(e: any) {
@@ -289,15 +339,34 @@ async function main() {
       if (!uuid) return
       showFullscreen(uuid)
     },
-    async bermaidCloseFullscreen() {
+    async bermaidCloseFullscreen(e: any) {
+      e?.stopPropagation?.()
       hideFullscreen()
     },
     async bermaidLightboxContentClick(e: any) {
-      e.stopPropagation?.()
+      // Prevent clicks inside the content box from bubbling to the backdrop.
+      e?.stopPropagation?.()
+    },
+    async bermaidZoomIn(e: any) {
+      e?.stopPropagation?.()
+      lightboxZoom = Math.min(lightboxZoom * 1.25, 8)
+      updateLightboxTransform()
+    },
+    async bermaidZoomOut(e: any) {
+      e?.stopPropagation?.()
+      lightboxZoom = Math.max(lightboxZoom / 1.25, 0.125)
+      updateLightboxTransform()
+    },
+    async bermaidZoomReset(e: any) {
+      e?.stopPropagation?.()
+      lightboxZoom = 1
+      lightboxPanX = 0
+      lightboxPanY = 0
+      updateLightboxTransform()
     },
   })
 
-  // --- Host Scope Event Listeners for Resize ---
+  // --- Host Scope Event Listeners for Resize/Zoom/Pan ---
   let hostScope: any = null
   try {
     hostScope = await logseq.Experiments.ensureHostScope()
@@ -305,7 +374,7 @@ async function main() {
     console.warn('Could not get host scope for resize:', err)
   }
 
-  let hostDoc: Document | null = null
+  // hostDoc declared above (before provideModel); resolve it here.
   try {
     // ensureHostScope() returns the host window proxy; .document is most reliable
     hostDoc = (hostScope as any)?.document
@@ -354,9 +423,18 @@ async function main() {
           wrapper.style.marginLeft = `${-widthDiff}px`
         }
       }
+
+      // Handle lightbox pan dragging
+      if (lightboxDragState) {
+        const dx = e.clientX - lightboxDragState.startX
+        const dy = e.clientY - lightboxDragState.startY
+        lightboxPanX = lightboxDragState.startPanX + dx / lightboxZoom
+        lightboxPanY = lightboxDragState.startPanY + dy / lightboxZoom
+        updateLightboxTransform()
+      }
     }
 
-    // Mouse down on resize handle
+    // Mouse down on resize handle or lightbox content for pan
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (target?.classList?.contains('bermaid-resize-handle')) {
@@ -377,13 +455,26 @@ async function main() {
         }
       }
       
+      // Start lightbox pan when dragging on content (but not on buttons)
+      if (fullscreenVisible && target?.closest?.('.bermaid-lightbox-content') && !(target as HTMLElement).closest?.('button')) {
+        lightboxDragState = {
+          startX: e.clientX,
+          startY: e.clientY,
+          startPanX: lightboxPanX,
+          startPanY: lightboxPanY,
+        }
+        const contentEl = doc.querySelector('.bermaid-lightbox-content') as HTMLElement | null
+        if (contentEl) contentEl.classList.add('bermaid-panning')
+        e.preventDefault()
+      }
+
       // Hide context menu on any click
       if (!target?.closest('.bermaid-context-menu')) {
         hideContextMenu()
       }
     }
 
-    // Mouse up - finish resize
+    // Mouse up - finish resize or lightbox pan
     const onMouseUp = async () => {
       if (resizeState) {
         const wrapper = resizeState.wrapperEl
@@ -394,6 +485,32 @@ async function main() {
         await setBlockWidth(resizeState.uuid, finalWidth)
         resizeState = null
       }
+      if (lightboxDragState) {
+        lightboxDragState = null
+        const contentEl = doc.querySelector('.bermaid-lightbox-content') as HTMLElement | null
+        if (contentEl) contentEl.classList.remove('bermaid-panning')
+      }
+    }
+
+    // Mouse wheel - zoom lightbox toward cursor
+    const onWheel = (e: WheelEvent) => {
+      if (!fullscreenVisible) return
+      const target = e.target as HTMLElement
+      if (!target?.closest?.('.bermaid-lightbox')) return
+      e.preventDefault()
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+      const newZoom = Math.max(0.125, Math.min(8, lightboxZoom * zoomFactor))
+      // Zoom toward cursor position relative to content center
+      const contentEl = doc.querySelector('.bermaid-lightbox-content') as HTMLElement | null
+      if (contentEl) {
+        const rect = contentEl.getBoundingClientRect()
+        const cx = rect.left + rect.width / 2
+        const cy = rect.top + rect.height / 2
+        lightboxPanX = lightboxPanX + (e.clientX - cx) * (1 / newZoom - 1 / lightboxZoom)
+        lightboxPanY = lightboxPanY + (e.clientY - cy) * (1 / newZoom - 1 / lightboxZoom)
+      }
+      lightboxZoom = newZoom
+      updateLightboxTransform()
     }
 
     // Hide context menu on scroll or another context menu
@@ -414,6 +531,7 @@ async function main() {
     doc.addEventListener('mousemove', onMouseMove, true)
     doc.addEventListener('mousedown', onMouseDown, true)
     doc.addEventListener('mouseup', onMouseUp, true)
+    doc.addEventListener('wheel', onWheel, { capture: true, passive: false })
     doc.addEventListener('scroll', hideContextMenu, true)
     doc.addEventListener('contextmenu', onContextMenu, true)
     doc.addEventListener('keydown', onKeyDown, true)
@@ -422,6 +540,7 @@ async function main() {
       doc.removeEventListener('mousemove', onMouseMove, true)
       doc.removeEventListener('mousedown', onMouseDown, true)
       doc.removeEventListener('mouseup', onMouseUp, true)
+      doc.removeEventListener('wheel', onWheel, true)
       doc.removeEventListener('scroll', hideContextMenu, true)
       doc.removeEventListener('contextmenu', onContextMenu, true)
       doc.removeEventListener('keydown', onKeyDown, true)

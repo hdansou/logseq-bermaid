@@ -129,31 +129,125 @@ export const BERMAID_STYLES = `
     position: fixed;
     inset: 0;
     z-index: 2000;
-    background: rgba(0, 0, 0, 0.75);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
-    box-sizing: border-box;
+  }
+
+  .bermaid-lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.82);
+    z-index: 1;
     cursor: zoom-out;
   }
 
-  .bermaid-lightbox-content {
-    width: min(96vw, 1800px);
-    max-height: 96vh;
-    overflow: auto;
-    background: var(--ls-primary-background-color, white);
-    border-radius: 8px;
-    padding: 16px;
-    box-sizing: border-box;
-    cursor: default;
+  .bermaid-lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.55);
+    background: rgba(0,0,0,0.45);
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    line-height: 1;
+    padding: 0;
+  }
+  .bermaid-lightbox-close:hover {
+    background: rgba(255,255,255,0.2);
+    border-color: white;
   }
 
-  .bermaid-lightbox-content svg {
+  .bermaid-zoom-controls {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(0,0,0,0.62);
+    border-radius: 999px;
+    padding: 5px 10px;
+    z-index: 10;
+    backdrop-filter: blur(6px);
+    user-select: none;
+  }
+
+  .bermaid-zoom-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.35);
+    background: transparent;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    line-height: 1;
+    padding: 0;
+  }
+  .bermaid-zoom-btn:hover {
+    background: rgba(255,255,255,0.2);
+    border-color: rgba(255,255,255,0.7);
+  }
+
+  .bermaid-zoom-level {
+    color: rgba(255,255,255,0.9);
+    font-size: 12px;
+    min-width: 40px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bermaid-lightbox-content {
+    position: relative;
+    z-index: 5;
+    width: min(96vw, 1800px);
+    height: calc(100vh - 96px);
+    overflow: hidden;
+    background: var(--ls-primary-background-color, white);
+    border-radius: 8px;
+    box-sizing: border-box;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bermaid-lightbox-content.bermaid-panning {
+    cursor: grabbing;
+  }
+
+  .bermaid-lightbox-zoom-container {
+    transform-origin: center center;
+    will-change: transform;
+    width: 100%;
+    padding: 16px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .bermaid-lightbox-zoom-container svg {
     display: block;
     width: 100%;
     height: auto;
-    max-height: calc(96vh - 48px);
-    object-fit: contain;
+    max-height: calc(100vh - 128px);
   }
 `

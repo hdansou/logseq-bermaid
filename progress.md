@@ -1,6 +1,6 @@
 # Bermaid Plugin - Compliance Progress
 
-**Last Updated:** 2026-02-11  
+**Last Updated:** 2026-03-01  
 **Status:** Not Started - All items pending
 
 ## Critical Issues (Must Fix)
@@ -317,6 +317,63 @@ After implementing changes:
     - Catches regressions before release tags
     - Enforces baseline build health in collaboration workflows
   - Implemented (2026-03-01): Added `.github/workflows/ci.yml` (push to `main` + `pull_request`) running `npm ci`, `npm run typecheck`, and `npm run build`
+
+## Feature: Lightbox Zoom, Pan & Close Button
+
+**Status:** ✅ Completed — 2026-03-01
+
+### Implementation Summary
+
+✅ **Close button (✕)** — Fixed circular button top-right of the lightbox overlay; triggers `hideFullscreen()` (same as Esc / backdrop click)  
+✅ **Zoom controls bar** — Fixed pill at the bottom centre with `−`, `+`, `⊙` (reset) buttons and a live `%` label  
+✅ **Mouse-wheel zoom** — Zooms toward cursor position (12.5% – 800%); uses `preventDefault` to block page scroll  
+✅ **Click-drag to pan** — Mousedown on the image area starts a pan drag; cursor changes to `grab` / `grabbing`  
+✅ **State reset** — Zoom, pan, and drag state reset on every open and on close/Esc  
+✅ **CSS** — New classes: `.bermaid-lightbox-backdrop`, `.bermaid-lightbox-close`, `.bermaid-zoom-controls`, `.bermaid-zoom-btn`, `.bermaid-zoom-level`, `.bermaid-lightbox-zoom-container`, `.bermaid-panning`
+
+### Features Delivered
+
+#### Close Button
+
+- Circular `✕` button fixed to top-right of the lightbox, always visible
+- Same behaviour as pressing Esc or clicking the dark backdrop
+- Smooth hover state (brightens border + background)
+
+#### Zoom Controls
+
+- Pill-shaped bar fixed at lightbox bottom-centre
+- `−` / `+`: zoom out/in × 1.25 per click
+- `⊙`: resets zoom to 100% and clears pan offset
+- Live label shows current zoom (e.g. `125%`), updated by direct DOM mutation (`updateLightboxTransform`)
+- Zoom range: 12.5% – 800%
+
+#### Mouse Wheel Zoom
+
+- Registered with `{ capture: true, passive: false }` so `preventDefault()` can block Logseq page scroll
+- Zoom anchored toward cursor: `newPan = oldPan + cursorOffset × (1/newZoom − 1/oldZoom)`
+
+#### Click-Drag Pan
+
+- Mousedown inside `.bermaid-lightbox-content` (excluding buttons) starts pan drag
+- Mousemove computes delta and updates `lightboxPanX/Y`, transformed by current zoom scale
+- Mouseup ends drag and removes `.bermaid-panning` class
+
+#### `updateLightboxTransform()`
+
+- Directly mutates `.bermaid-lightbox-zoom-container` style and `.bermaid-zoom-level` text via `hostDoc.querySelector` — avoids re-rendering the entire lightbox `provideUI` call on every scroll/drag event
+
+### Bug Fixes (2026-03-01)
+
+- [x] **Fix `/bermaid` not writing `{{renderer :bermaid}}` to the parent block**
+  - File: `src/index.ts` (`insertBermaidTemplate`)
+  - Root cause: Slash command leaves the block in editing mode; `updateBlock` on an actively edited block is silently ignored by Logseq (live editor state takes precedence)
+  - Fix: Call `logseq.Editor.exitEditingMode(true)` + 100 ms sleep before the `updateBlock` retry loop so the block is released before the programmatic write
+  - Also surfaced non-retryable `updateBlock` failures as a user-visible error toast instead of a silent `console.warn`
+
+- [x] **Fix "No child block found" flash immediately after `/bermaid`**
+  - File: `src/index.ts` (`onMacroRendererSlotted`)
+  - Root cause: The macro renderer slot fires the moment `{{renderer :bermaid}}` lands, before `insertBermaidTemplate` has finished inserting the child mermaid block (~300 ms+ later), so the first render sees no children
+  - Fix: Added a retry loop in the renderer (up to 6 × 250 ms ≈ 1.5 s) that re-fetches the block until children appear, absorbing the insertion delay without flashing the error state
 
 ### Next Priorities
 
