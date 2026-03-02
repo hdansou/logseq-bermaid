@@ -266,7 +266,6 @@ To test the implementation:
 After implementing changes:
 
 - [ ] Test in DB-based graph
-- [ ] Test in file-based graph
 - [ ] Test theme switching (light/dark)
 - [ ] Test slash command insertion
 - [ ] Test error states (missing child block, invalid syntax)

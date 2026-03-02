@@ -34,7 +34,7 @@ Suggested content:
   "icon": "./icon.svg",
   "effect": false,
   "theme": false,
-  "web": false,
+  "web": true,
   "supportsDB": true,
   "supportsDBOnly": false
 }

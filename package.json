@@ -15,7 +15,7 @@
   "theme": false,
   "web": true,
   "supportsDB": true,
-  "supportsDBOnly": true,
+  "supportsDBOnly": false,
   "effect": false,
   "sponsors": [],
   "main": "dist/index.js",

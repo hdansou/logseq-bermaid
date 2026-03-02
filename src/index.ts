@@ -105,7 +105,9 @@ function trimSvgTopWhitespace(svg: string): string {
 
   return svg
     .replace(`viewBox="0 0 ${vbMatch[1]} ${vbMatch[2]}"`, `viewBox="0 ${trimAmount} ${svgWidth} ${newHeight}"`)
-    .replace(`height="${vbMatch[2]}"`, `height="${newHeight}"`)
+    // Replace height only within the root <svg> opening tag; a plain string replace
+    // would match the same value on child elements (e.g. <rect height="600">) first.
+    .replace(/(<svg\b[\s\S]*?)\bheight="[\d.]+"/, `$1height="${newHeight}"`)
 }
 
 async function renderDiagram(mermaidSyntax: string): Promise<string> {
@@ -331,8 +333,12 @@ async function main() {
       const uuid = e.dataset?.blockUuid
       const rect = e.dataset?.rect
       if (uuid && rect) {
-        const { x, y } = JSON.parse(rect)
-        showContextMenu(uuid, x, y)
+        try {
+          const { x, y } = JSON.parse(rect)
+          showContextMenu(uuid, x, y)
+        } catch {
+          // rect dataset was stale or malformed — skip
+        }
       }
     },
     async bermaidOpenFullscreen(e: any) {
