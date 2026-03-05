@@ -126,3 +126,12 @@ Vite with the local `vite-logseq-safe-plugin` (see `vite-logseq-safe-plugin.ts`)
 ### Release
 
 Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packages plugin files into `logseq-bermaid.zip`, and creates a GitHub release. Marketplace submission is a separate manual process.
+
+### Known `npm audit` Vulnerabilities (Accepted Risk)
+
+`npm audit` reports vulnerabilities in transitive dependencies of `@logseq/libs`:
+
+- **dompurify** (moderate — XSS in 3.1.3–3.3.1, GHSA-v2wj-7wpq-c8vv) — pulled by `@logseq/libs`; the fix requires downgrading the SDK to 0.0.17 which is a breaking change. The plugin does not call DOMPurify directly.
+- **lodash-es** (moderate — prototype pollution in `_.unset`/`_.omit`, GHSA-xxjr-mmjv-4gpg) — pulled by `@logseq/libs`; same SDK constraint. The plugin does not use lodash.
+
+These cannot be resolved without an upstream `@logseq/libs` upgrade. The risk is accepted because the plugin runs inside the Logseq sandbox and does not expose these transitive dependencies to untrusted input.

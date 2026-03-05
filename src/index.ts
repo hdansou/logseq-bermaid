@@ -8,13 +8,34 @@ import { escapeHtml } from './utils/text'
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
+/** Size-capped Map that evicts the least-recently-inserted entry when full. */
+class CappedMap<K, V> extends Map<K, V> {
+  constructor(private maxSize: number) { super() }
+  set(key: K, value: V): this {
+    if (this.has(key)) this.delete(key)
+    super.set(key, value)
+    if (this.size > this.maxSize) {
+      const oldest = this.keys().next().value!
+      this.delete(oldest)
+    }
+    return this
+  }
+}
+
 let currentThemeMode: string = 'dark'
 
 /** Rendered SVG strings keyed by block UUID, for copy-to-clipboard */
-const svgCache = new Map<string, string>()
+const svgCache = new CappedMap<string, string>(200)
 
 /** In-memory width cache to avoid redundant async lookups */
-const widthCache = new Map<string, number>()
+const widthCache = new CappedMap<string, number>(500)
+
+/** Tracks rendered diagram slots for re-rendering on theme change */
+interface RenderedSlot {
+  slot: string
+  mermaidSyntax: string
+}
+const renderedSlots = new Map<string, RenderedSlot>()
 
 /** Context menu visibility state */
 let contextMenuVisible = false
@@ -275,6 +296,32 @@ async function setBlockWidth(uuid: string, width: number): Promise<void> {
   }
 }
 
+function buildDiagramHtml(blockUuid: string, svg: string, width: number): string {
+  return `
+    <div class="bermaid-wrapper" data-block-uuid="${blockUuid}" style="width: ${width}px;">
+      <div class="bermaid-resize-handle bermaid-resize-left" data-side="left"></div>
+      <div class="bermaid-container"
+           data-on-click="bermaidOpenFullscreen"
+           data-on-contextmenu="bermaidContextMenu"
+           data-block-uuid="${blockUuid}"
+           data-rect='{"x":0,"y":0}'
+           data-prevent-default="true">
+        ${svg}
+      </div>
+      <button class="bermaid-copy-btn"
+              data-on-click="bermaidCopyImage"
+              data-block-uuid="${blockUuid}"
+              title="Copy as PNG">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+      <div class="bermaid-resize-handle bermaid-resize-right" data-side="right"></div>
+    </div>
+  `
+}
+
 async function main() {
   console.log('Bermaid plugin loaded!')
   const offHooks: Array<() => void> = []
@@ -398,9 +445,24 @@ async function main() {
   if (hostDoc) {
     const doc = hostDoc
 
+    // Cache bermaid container elements to avoid querySelectorAll on every mousemove.
+    // Refresh the cache when the DOM mutates (new diagrams rendered / removed).
+    let cachedContainers: NodeListOf<Element> | null = null
+    const refreshContainerCache = () => { cachedContainers = null }
+    const observer = new MutationObserver(refreshContainerCache)
+    observer.observe(doc.body, { childList: true, subtree: true })
+    offHooks.push(() => observer.disconnect())
+
+    const getContainers = () => {
+      if (!cachedContainers) {
+        cachedContainers = doc.querySelectorAll('.bermaid-container[data-on-contextmenu]')
+      }
+      return cachedContainers
+    }
+
     const onMouseMove = (e: MouseEvent) => {
       // Update context menu position attribute
-      const containers = doc.querySelectorAll('.bermaid-container[data-on-contextmenu]')
+      const containers = getContainers()
       containers.forEach((el: any) => {
         el.dataset.rect = JSON.stringify({ x: e.clientX, y: e.clientY })
       })
@@ -557,8 +619,16 @@ async function main() {
   // --- Theme mode detection ---
   const offThemeModeChanged = logseq.App.onThemeModeChanged(({ mode }) => {
     currentThemeMode = mode
-    // Note: re-rendering existing diagrams would require tracking rendered slots.
-    // For now, new renders will pick up the updated mode.
+    // Re-render all tracked diagrams with the new theme
+    for (const [uuid, { slot, mermaidSyntax }] of renderedSlots) {
+      renderDiagram(mermaidSyntax).then(async (svg) => {
+        svgCache.set(uuid, svg)
+        const width = await getBlockWidth(uuid)
+        renderSlot(uuid, slot, buildDiagramHtml(uuid, svg, width))
+      }).catch((err) => {
+        console.warn('Bermaid: failed to re-render on theme change', uuid, err)
+      })
+    }
   })
   if (typeof offThemeModeChanged === 'function') {
     offHooks.push(offThemeModeChanged)
@@ -607,12 +677,12 @@ async function main() {
       }
 
       if (!block) {
-        renderSlot(blockUuid, slot, `<div class="bermaid-error">Error: Block not found</div>`)
+        renderSlot(blockUuid, slot, `<div class="bermaid-error">Block not found — try reloading the page.</div>`)
         return
       }
 
       if (children.length === 0) {
-        renderSlot(blockUuid, slot, `<div class="bermaid-error">No child block found. Add a child block with mermaid syntax.</div>`)
+        renderSlot(blockUuid, slot, `<div class="bermaid-error">No child block found — add a child block with Mermaid syntax (e.g. "graph TD; A-->B").</div>`)
         return
       }
 
@@ -626,45 +696,29 @@ async function main() {
       let mermaidSyntax = mermaidLines.join('\n').trim()
 
       // Strip code fence if wrapped in ```mermaid ... ```
-      const fenceMatch = mermaidSyntax.match(/^```(?:mermaid)?\s*\n([\s\S]*?)\n?```$/m)
-      if (fenceMatch) {
-        mermaidSyntax = fenceMatch[1].trim()
+      // Line-based parser handles unusual whitespace better than a single regex.
+      const lines = mermaidSyntax.split('\n')
+      if (lines.length >= 2) {
+        const first = lines[0].trimEnd()
+        const last = lines[lines.length - 1].trimEnd()
+        if (/^```(?:mermaid)?\s*$/.test(first) && /^```\s*$/.test(last)) {
+          mermaidSyntax = lines.slice(1, -1).join('\n').trim()
+        }
       }
       if (!mermaidSyntax) {
-        renderSlot(blockUuid, slot, `<div class="bermaid-error">Child block is empty. Add mermaid syntax.</div>`)
+        renderSlot(blockUuid, slot, `<div class="bermaid-error">Child block is empty — add Mermaid syntax (e.g. "graph TD; A-->B").</div>`)
         return
       }
 
       const svg = await renderDiagram(mermaidSyntax)
       svgCache.set(blockUuid, svg)
+      renderedSlots.set(blockUuid, { slot, mermaidSyntax })
       const width = await getBlockWidth(blockUuid)
 
-      renderSlot(blockUuid, slot, `
-          <div class="bermaid-wrapper" data-block-uuid="${blockUuid}" style="width: ${width}px;">
-            <div class="bermaid-resize-handle bermaid-resize-left" data-side="left"></div>
-            <div class="bermaid-container" 
-                 data-on-click="bermaidOpenFullscreen"
-                 data-on-contextmenu="bermaidContextMenu"
-                 data-block-uuid="${blockUuid}"
-                 data-rect='{"x":0,"y":0}'
-                 data-prevent-default="true">
-              ${svg}
-            </div>
-            <button class="bermaid-copy-btn"
-                    data-on-click="bermaidCopyImage"
-                    data-block-uuid="${blockUuid}"
-                    title="Copy as PNG">
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-            </button>
-            <div class="bermaid-resize-handle bermaid-resize-right" data-side="right"></div>
-          </div>
-        `)
+      renderSlot(blockUuid, slot, buildDiagramHtml(blockUuid, svg, width))
     } catch (err: any) {
       const message = err?.message || String(err)
-      renderSlot(blockUuid, slot, `<div class="bermaid-error">Bermaid render error:\n${escapeHtml(message)}</div>`)
+      renderSlot(blockUuid, slot, `<div class="bermaid-error">Invalid Mermaid syntax — check the child block.\n${escapeHtml(message)}</div>`)
     }
   })
 

@@ -6,29 +6,29 @@ Open tasks ordered by priority. Completed work is recorded in [CHANGELOG.md](CHA
 
 ## Functional
 
-- [ ] **Re-render on theme change** — existing diagrams on the page are not re-rendered when
-      Logseq's light/dark mode switches at runtime; only newly opened pages pick up the new theme.
+- [x] **Re-render on theme change** — existing diagrams on the page are now re-rendered when
+      Logseq's light/dark mode switches at runtime via tracked `renderedSlots`.
 
-- [ ] **Bounded SVG cache** — `svgCache` and `widthCache` are unbounded `Map`s; add an LRU
-      or size-capped eviction policy to avoid memory growth in long sessions.
+- [x] **Bounded SVG cache** — `svgCache` and `widthCache` use `CappedMap` (200 / 500 entries)
+      with oldest-entry eviction to avoid memory growth in long sessions.
 
-- [ ] **DOM-safe mermaid fence stripping** — the current regex trim for triple-backtick mermaid
-      fences is fragile with unusual whitespace; replace with a proper line-based parser.
+- [x] **DOM-safe mermaid fence stripping** — replaced single regex with a line-based parser
+      that handles unusual whitespace correctly.
 
 ---
 
 ## Quality
 
-- [ ] **Reduce per-mousemove DOM reads** — the context menu repositioning path queries the DOM
-      on every `mousemove`; throttle or cache the bounding-rect lookup.
+- [x] **Reduce per-mousemove DOM reads** — container elements are cached via a `MutationObserver`-
+      invalidated reference instead of querying the DOM on every `mousemove`.
 
-- [ ] **Improve TypeScript config** — add `lib`, `resolveJsonModule`, and `isolatedModules`
-      to `tsconfig.json` for stricter checking. (`include` already covers all project TS files.)
+- [x] **Improve TypeScript config** — added `lib`, `resolveJsonModule`, and `isolatedModules`
+      to `tsconfig.json` for stricter checking.
 
-- [ ] **Tighten Vite production config** — add `minify: 'terser'` and `sourcemap: false`
+- [x] **Tighten Vite production config** — added `minify: 'terser'` and `sourcemap: false`
       in `vite.config.ts`.
 
-- [ ] **Enhance error messages** — replace bare text errors with user-friendly messages
+- [x] **Enhance error messages** — error messages now include user-friendly guidance
       (e.g. "Invalid Mermaid syntax — check the child block").
 
 ---
@@ -45,6 +45,5 @@ Open tasks ordered by priority. Completed work is recorded in [CHANGELOG.md](CHA
 
 ## Security
 
-- [ ] **Document SDK vulnerability acceptance** — `npm audit` reports upstream issues in
-      `@logseq/libs` transitive deps that cannot be resolved without an SDK upgrade; document the
-      accepted risk in CLAUDE.md.
+- [x] **Document SDK vulnerability acceptance** — `npm audit` upstream issues in
+      `@logseq/libs` transitive deps documented as accepted risk in CLAUDE.md.

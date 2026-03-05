@@ -7,6 +7,8 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     target: 'es2020',
+    minify: 'terser',
+    sourcemap: false,
   },
   server: {
     port: 8080,
