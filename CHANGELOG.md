@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
+## [Unreleased]
+
+### Changed
+
+- Renamed `dev` script to `watch` (`vite build --watch`) for clarity; added explicit `serve` script (`vite serve`) for the dev HTTP server.
+- Removed unused `vite-plugin-logseq` devDependency (replaced by local `vite-logseq-safe-plugin.ts`).
+- Extended `tsconfig.json` `include` to cover `vite.config.ts` and `vite-logseq-safe-plugin.ts` so `npm run typecheck` validates all project TypeScript.
+- Narrowed `.gitignore` from `.vscode/` to `.vscode/*.code-workspace` so `settings.json` is tracked.
+- Moved `test-insert.js` to `scripts/test-insert.js`; added usage comment header.
+
+### Fixed
+
+- `registerSlashCommand` callback marked `async` to satisfy `BlockCommandCallback` return-type constraint (latent TypeScript error surfaced by the expanded typecheck scope).
+
 ## [0.2.1] - 2026-03-01
 
 ### Fixed

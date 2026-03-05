@@ -761,7 +761,7 @@ async function main() {
   }
 
   // --- Slash Command ---
-  logseq.Editor.registerSlashCommand('bermaid', (event: any) => {
+  logseq.Editor.registerSlashCommand('bermaid', async (event: any) => {
     const targetUuid = event?.uuid || event?.blockUuid
     setTimeout(() => {
       void insertBermaidTemplate(targetUuid)

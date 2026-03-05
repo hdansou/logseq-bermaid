@@ -10,5 +10,5 @@
     "outDir": "dist",
     "declaration": false
   },
-  "include": ["src"]
+  "include": ["src", "vite.config.ts", "vite-logseq-safe-plugin.ts"]
 }

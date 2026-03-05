@@ -6,6 +6,8 @@ Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [bea
 
 - Render diagrams from `{{renderer :bermaid}}` using child block content
 - `/bermaid` slash command to insert a starter diagram
+- **Lightbox** — click any diagram to open a full-screen overlay with zoom and pan
+- **Zoom & pan** — scroll to zoom (12.5 %–800 %), click-drag to pan, zoom controls pill at the bottom
 - Copy rendered diagrams as PNG (hover button or right-click menu)
 - Drag to resize diagrams from left or right edge
 - Persist custom width per block in DB graphs
@@ -58,6 +60,9 @@ graph TD
 
 ## Interactions
 
+- **Lightbox**: click the diagram to open full-screen; press Esc, click the backdrop, or click the ✕ button to close
+- **Zoom**: scroll the mouse wheel inside the lightbox to zoom toward the cursor; use the `−` / `+` / `⊙` control pill at the bottom
+- **Pan**: click-drag inside the lightbox to pan the diagram
 - **Copy as PNG**: hover and click the copy button, or right-click the diagram and choose copy
 - **Resize**: drag the left or right resize handle on diagram edges
 
@@ -68,11 +73,21 @@ graph TD
 
 ## Development
 
-- Watch mode build:
+Development requires two concurrent processes:
+
+- **File watcher** — rebuilds `dist/` on every save:
 
   ```bash
-  npm run dev
+  npm run watch
   ```
+
+- **Dev HTTP server** — serves the plugin at `http://localhost:8080`:
+
+  ```bash
+  npm run serve
+  ```
+
+Then in Logseq (Developer mode enabled): Plugins → ⋮ → "Load plugin from web url" → `http://localhost:8080`.
 
 - Production build:
 
@@ -91,20 +106,15 @@ This repository includes `.github/workflows/publish.yml`.
 Example:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 ## Publish to Logseq Marketplace
 
-1. Ensure the latest GitHub release has the plugin zip attached.
-2. Fork `logseq/marketplace`.
-3. Add `packages/logseq-bermaid/manifest.json` in your fork.
-4. Open a PR to `logseq/marketplace`.
+Detailed steps and a manifest template are in [docs/MARKETPLACE_SUBMISSION.md](docs/MARKETPLACE_SUBMISSION.md).
 
-Detailed steps and a manifest template are in `MARKETPLACE_SUBMISSION.md`.
-
-> Marketplace review expects at least one image or gif in README showing the plugin in action.
+> Marketplace review requires at least one screenshot or animated GIF in the README showing the plugin in action.
 
 ## License
 

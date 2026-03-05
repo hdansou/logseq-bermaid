@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "playwright-cli": true,
+        "/^npm -C /Users/dzu/Projects/src/github\\.com/logseq-bermaid run typecheck && npm -C /Users/dzu/Projects/src/github\\.com/logseq-bermaid run build$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

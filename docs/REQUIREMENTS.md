@@ -27,6 +27,8 @@ Bermaid is a Logseq plugin that renders mermaid diagrams using the [beautiful-me
         B -->|No| D[End]
     ```
 
+- In DB graphs only: set `display-type: "code"` and `lang: "mermaid"` on the child block via `upsertBlockProperty`; skip those calls in file-based graphs
+
 ### FR-3: Theme Support
 
 - Auto-detect Logseq's light/dark mode and select an appropriate beautiful-mermaid theme
@@ -45,8 +47,9 @@ Bermaid is a Logseq plugin that renders mermaid diagrams using the [beautiful-me
 
 - Display a user-friendly error message in the renderer slot when:
   - Mermaid syntax is invalid
-  - No child block content is found
+  - No child block content is found after a 1.5 s retry window
   - The rendering library encounters an error
+- Surface non-retryable slash-command failures as a user-visible toast instead of a silent warning
 
 ### FR-6: Supported Diagram Types
 
@@ -57,6 +60,29 @@ All diagram types supported by beautiful-mermaid:
 - Sequence diagrams
 - Class diagrams
 - ER diagrams
+
+### FR-7: Copy as PNG
+
+- A copy button appears when hovering over a rendered diagram
+- Right-clicking the diagram shows a context menu with a "Copy as PNG" option
+- Both paths write a PNG to the system clipboard at 2× resolution
+- Respects the `transparentBg` setting
+- Uses host-scope clipboard API with fallback for Logseq's sandboxed iframe
+
+### FR-8: Drag-to-Resize
+
+- Left and right resize handles are shown on diagram hover
+- Dragging a handle changes diagram width (min 200 px, max parent width or 1200 px)
+- Dragging the left handle keeps the right edge anchored (adjusts `marginLeft`)
+- Width is persisted as a `bermaid-width` block property in DB graphs and restored on re-render
+
+### FR-9: Lightbox Zoom & Pan
+
+- Clicking a rendered diagram opens a full-screen lightbox overlay
+- The lightbox can be closed via an ✕ button, pressing Esc, or clicking the backdrop
+- Mouse-wheel scrolls zoom toward the cursor position; range: 12.5 %–800 %
+- Click-drag inside the lightbox pans the diagram
+- A zoom controls pill (bottom-centre) provides `−`, `+`, and `⊙` (reset) buttons with a live zoom label
 
 ## Non-Functional Requirements
 
@@ -91,18 +117,24 @@ This renders as an inline SVG flowchart in the Logseq page.
 ## Technical Architecture
 
 - **SDK**: `@logseq/libs` — Logseq Plugin SDK
-- **Renderer**: `beautiful-mermaid` — SVG rendering engine
+- **Renderer**: `beautiful-mermaid` — SVG rendering engine (pinned version)
 - **Bundler**: Vite — dev server + production build
 - **Entry**: `onMacroRendererSlotted` hook intercepts `{{renderer :bermaid}}` macros
-- **UI**: `provideUI()` injects SVG into the renderer slot
-- **Styling**: `provideStyle()` injects CSS for container sizing and error states
+- **UI**: `provideUI()` injects SVG + resize handles + copy button + lightbox trigger into the renderer slot
+- **Styling**: `provideStyle()` injects CSS for container, lightbox, zoom controls, and error states
+- **Host scope**: resize drag, context menu, lightbox, and zoom/pan use `window.top.document` event listeners; cleaned up on `beforeunload`
 
 ## Testing Strategy
 
 End-to-end tests using Playwright against Logseq at localhost:3001:
 
 1. Plugin loads successfully
-2. Slash command inserts macro + child block
+2. Slash command inserts macro + child block (in both DB and file graphs)
 3. Diagram renders as SVG
 4. Invalid syntax shows error message
 5. Theme switching updates diagram colors
+6. Hover shows copy button; click copies PNG to clipboard
+7. Right-click shows context menu with "Copy as PNG"
+8. Drag resize handles change diagram width; width persists on reload (DB graph)
+9. Click diagram opens lightbox; Esc / ✕ / backdrop closes it
+10. Mouse-wheel zoom and click-drag pan work inside the lightbox

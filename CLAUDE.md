@@ -10,8 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm install       # Install dependencies
-npm run dev       # Watch build mode, serves at http://localhost:8080
 npm run build     # Production build → dist/
+npm run watch     # Rebuild dist/ on file changes (no HTTP server)
+npm run serve     # Dev HTTP server at http://localhost:8080 (no rebuild)
+npm run typecheck # TypeScript type check only
 ```
 
 ## Testing
@@ -24,8 +26,8 @@ cd /Users/dzu/Projects/src/github.com/logseq && yarn watch
 
 Loading the plugin into the Logseq web app requires two separate processes:
 
-1. **Build watcher** — `npm run dev` (rebuilds `dist/` on file changes, no HTTP server)
-2. **Dev HTTP server** — `npx vite` (serves the plugin at `http://localhost:8080` with CORS headers)
+1. **Build watcher** — `npm run watch` (rebuilds `dist/` on file changes, no HTTP server)
+2. **Dev HTTP server** — `npm run serve` (serves the plugin at `http://localhost:8080` with CORS headers)
 
 Then in Logseq:
 
@@ -39,14 +41,14 @@ For UI testing and browser automation, use the `playwright-cli` skill.
 
 ### Plugin Entry Point
 
-`src/index.ts` is the entire plugin logic (~495 lines). It registers with the Logseq SDK via `logseq.ready(main)` and sets up:
+`src/index.ts` is the entire plugin logic (~775 lines). It registers with the Logseq SDK via `logseq.ready(main)` and sets up:
 
 - **Settings schema** — `theme` (enum, 15 options + "auto") and `transparentBg` (boolean)
 - **CSS injection** via `logseq.provideStyle()` from `src/styles.ts`
 - **Slash command** `/bermaid` — inserts macro + child block with starter template; for DB graphs also sets `display-type: "code"` and `lang: "mermaid"` on the child block
 - **`onMacroRendererSlotted` hook** — core rendering hook (see Data Flow below)
-- **`onThemeModeChanged` hook** — updates `currentThemeMode` for "auto" theme resolution
-- **Host-scope DOM events** — `mousemove`, `mousedown`, `mouseup`, `scroll`, `contextmenu` for resize and context menu
+- **`onThemeModeChanged` hook** — updates `currentThemeMode` for “auto” theme resolution
+- **Host-scope DOM events** — `mousemove`, `mousedown`, `mouseup`, `scroll`, `contextmenu` for resize, context menu, lightbox zoom, and lightbox pan
 
 ### Data Flow for Diagram Rendering
 
@@ -57,8 +59,18 @@ For UI testing and browser automation, use the `playwright-cli` skill.
   → renderMermaid() from beautiful-mermaid → SVG string
   → cache SVG in svgCache (Map<uuid, string>)
   → getBlockWidth() from widthCache or block property "bermaid-width"
-  → provideUI() injects HTML: SVG container + resize handles + copy button
+  → provideUI() injects HTML: SVG container + resize handles + copy button + lightbox trigger
 ````
+
+### Lightbox (Zoom & Pan)
+
+`bermaidOpenFullscreen(uuid)` opens a host-scope overlay on top of the Logseq window:
+
+- **Overlay** — `.bermaid-lightbox-backdrop` covers the full viewport; click backdrop or ✕ button to close (also Esc key)
+- **Zoom** — mouse-wheel listener (`capture: true, passive: false`) zooms toward the cursor using pan adjustment: `newPan = oldPan + cursorOffset × (1/newZoom − 1/oldZoom)`; range 12.5–800 %
+- **Pan** — mousedown on `.bermaid-lightbox-content` (outside control buttons) starts a drag; mousemove computes delta relative to current zoom; mouseup releases
+- **Zoom controls pill** — fixed bottom-centre bar with `−` / `+` / `⊙` buttons and a live zoom label updated by `updateLightboxTransform()` (direct DOM mutation, no full re-render)
+- **State** — `lightboxZoom`, `lightboxPanX/Y`, `lightboxDragging` reset on every open and close
 
 ### Resize Mechanism
 
@@ -94,18 +106,22 @@ All theme names are defined in `src/constants.ts`.
 
 ### Key Files
 
-| File                | Purpose                                                                     |
-| ------------------- | --------------------------------------------------------------------------- |
-| `src/index.ts`      | Entire plugin logic — settings, hooks, event handlers, rendering            |
-| `src/constants.ts`  | Theme choices, auto-theme mapping, default width (250px)                    |
-| `src/styles.ts`     | CSS injected into Logseq; uses `--ls-*` CSS variables for theme integration |
-| `src/utils/svg.ts`  | SVG → PNG Blob conversion                                                   |
-| `src/utils/text.ts` | `escapeHtml()` for safe error message display                               |
-| `vite.config.ts`    | Vite + `vite-plugin-logseq`; dev server on port 8080                        |
+| File                         | Purpose                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/index.ts`               | Entire plugin logic — settings, hooks, event handlers, rendering, lightbox                                                           |
+| `src/constants.ts`           | Theme choices, auto-theme mapping, default width (250px)                                                                             |
+| `src/styles.ts`              | CSS injected into Logseq; includes lightbox, zoom controls, resize handles                                                           |
+| `src/utils/svg.ts`           | SVG → PNG Blob conversion                                                                                                            |
+| `src/utils/text.ts`          | `escapeHtml()` for safe error message display                                                                                        |
+| `vite.config.ts`             | Vite config; dev server on port 8080; references local safe-dev plugin                                                               |
+| `vite-logseq-safe-plugin.ts` | Custom Vite plugin replacing `vite-plugin-logseq`; handles dev-server CORS, HMR safety, and writes `dist/index.html` on watch builds |
+| `icon.svg` / `icon-alt.svg`  | Plugin icons; `icon.svg` is referenced by `package.json` `logseq.icon`                                                               |
+| `scripts/test-insert.js`     | Playwright-cli eval snippet for manual block-insert smoke tests                                                                      |
+| `docs/`                      | Internal reference docs (`REQUIREMENTS.md`, `MARKETPLACE_SUBMISSION.md`)                                                             |
 
 ### Build
 
-Vite with `vite-plugin-logseq` produces `dist/index.html` (main entry) and `dist/index.js`. The `package.json` `logseq` field defines plugin metadata (`id`, `title`, `icon`, `main`).
+Vite with the local `vite-logseq-safe-plugin` (see `vite-logseq-safe-plugin.ts`) produces `dist/index.html` (main entry) and `dist/index.js`. The `package.json` `logseq` field defines plugin metadata (`id`, `title`, `icon` → `./icon.svg`, `main` → `dist/index.html`).
 
 ### Release
 
