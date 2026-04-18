@@ -8,6 +8,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ### Changed
 
+- Upgraded `@logseq/libs` from 0.2.12 to 0.3.2. Adds MessageChannel-based host↔plugin messaging (performance); clears the dompurify GHSA-v2wj-7wpq-c8vv advisory via the transitive bump to 3.3.3. No call-site changes required; all APIs the plugin uses are signature-compatible.
+- Added `src/__sdk_guard__.ts` — a compile-time assertion that references `logseq.App.getCurrentRoute` (new in 0.3.x). `npm run typecheck` will fail if the SDK is ever downgraded below 0.3.1. Not imported at runtime; tree-shaken out of the bundle.
 - Renamed `dev` script to `watch` (`vite build --watch`) for clarity; added explicit `serve` script (`vite serve`) for the dev HTTP server.
 - Removed unused `vite-plugin-logseq` devDependency (replaced by local `vite-logseq-safe-plugin.ts`).
 - Extended `tsconfig.json` `include` to cover `vite.config.ts` and `vite-logseq-safe-plugin.ts` so `npm run typecheck` validates all project TypeScript.

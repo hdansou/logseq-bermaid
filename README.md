@@ -8,7 +8,7 @@ Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [bea
 - `/bermaid` slash command to insert a starter diagram
 - **Lightbox** — click any diagram to open a full-screen overlay with zoom and pan
 - **Zoom & pan** — scroll to zoom (12.5 %–800 %), click-drag to pan, zoom controls pill at the bottom
-- Copy rendered diagrams as PNG (hover button or right-click menu)
+- Copy rendered diagrams as PNG via hover button
 - Drag to resize diagrams from left or right edge
 - Persist custom width per block in DB graphs
 - Theme support with `auto` mode that follows Logseq light/dark mode
@@ -63,7 +63,7 @@ graph TD
 - **Lightbox**: click the diagram to open full-screen; press Esc, click the backdrop, or click the ✕ button to close
 - **Zoom**: scroll the mouse wheel inside the lightbox to zoom toward the cursor; use the `−` / `+` / `⊙` control pill at the bottom
 - **Pan**: click-drag inside the lightbox to pan the diagram
-- **Copy as PNG**: hover and click the copy button, or right-click the diagram and choose copy
+- **Copy as PNG**: hover and click the copy button
 - **Resize**: drag the left or right resize handle on diagram edges
 
 ## Settings

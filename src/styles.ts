@@ -109,23 +109,6 @@ export const BERMAID_STYLES = `
   .bermaid-wrapper.bermaid-resizing .bermaid-resize-handle::after {
     opacity: 1 !important;
   }
-  .bermaid-context-menu {
-    position: fixed;
-    background: var(--ls-primary-background-color, white);
-    border: 1px solid var(--ls-border-color, #ddd);
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    z-index: 1000;
-    min-width: 150px;
-  }
-  .bermaid-context-menu-item {
-    padding: 8px 12px;
-    cursor: pointer;
-    transition: background 0.1s;
-  }
-  .bermaid-context-menu-item:hover {
-    background: var(--ls-secondary-background-color, #f5f5f5);
-  }
   .bermaid-loading {
     color: var(--ls-secondary-text-color, #999);
     font-style: italic;

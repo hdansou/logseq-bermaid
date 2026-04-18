@@ -1,12 +1,43 @@
 import '@logseq/libs'
 import { renderMermaid, THEMES } from 'beautiful-mermaid'
 import type { RenderOptions } from 'beautiful-mermaid'
-import { AUTO_THEME, DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES } from './constants'
+import {
+  AUTO_THEME, DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES,
+  MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH,
+  ZOOM_MIN, ZOOM_MAX, ZOOM_STEP,
+  SVG_CACHE_CAP, WIDTH_CACHE_CAP, RENDERED_SLOTS_CAP,
+} from './constants'
 import { BERMAID_STYLES } from './styles'
 import { svgToPngBlob } from './utils/svg'
 import { escapeHtml } from './utils/text'
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+/** Retry an async function up to `attempts` times with `delay` ms between tries. */
+async function retry<T>(
+  fn: () => Promise<T | null | undefined>,
+  opts?: { attempts?: number; delay?: number; retryIf?: (err: unknown) => boolean }
+): Promise<T | null> {
+  const { attempts = 5, delay = 300, retryIf } = opts ?? {}
+  let lastErr: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const result = await fn()
+      if (result !== null && result !== undefined) return result
+    } catch (err) {
+      lastErr = err
+      if (retryIf && !retryIf(err)) throw err
+    }
+    if (i < attempts - 1) await sleep(delay)
+  }
+  if (lastErr) throw lastErr
+  return null
+}
+
+function isRetryableDbError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('[deferred timeout]') || msg.includes('entity id, got 0')
+}
 
 /** Size-capped Map that evicts the least-recently-inserted entry when full. */
 class CappedMap<K, V> extends Map<K, V> {
@@ -25,20 +56,17 @@ class CappedMap<K, V> extends Map<K, V> {
 let currentThemeMode: string = 'dark'
 
 /** Rendered SVG strings keyed by block UUID, for copy-to-clipboard */
-const svgCache = new CappedMap<string, string>(200)
+const svgCache = new CappedMap<string, string>(SVG_CACHE_CAP)
 
 /** In-memory width cache to avoid redundant async lookups */
-const widthCache = new CappedMap<string, number>(500)
+const widthCache = new CappedMap<string, number>(WIDTH_CACHE_CAP)
 
 /** Tracks rendered diagram slots for re-rendering on theme change */
 interface RenderedSlot {
   slot: string
   mermaidSyntax: string
 }
-const renderedSlots = new Map<string, RenderedSlot>()
-
-/** Context menu visibility state */
-let contextMenuVisible = false
+const renderedSlots = new CappedMap<string, RenderedSlot>(RENDERED_SLOTS_CAP)
 
 /** Fullscreen lightbox visibility state */
 let fullscreenVisible = false
@@ -56,6 +84,13 @@ interface LightboxDragState {
   startPanY: number
 }
 let lightboxDragState: LightboxDragState | null = null
+
+function resetLightboxState(): void {
+  lightboxZoom = 1
+  lightboxPanX = 0
+  lightboxPanY = 0
+  lightboxDragState = null
+}
 
 /** Resize state */
 interface ResizeState {
@@ -169,35 +204,13 @@ async function copyImageToClipboard(uuid: string): Promise<void> {
 }
 
 /**
- * Show context menu at cursor position
- */
-function showContextMenu(uuid: string, x: number, y: number): void {
-  contextMenuVisible = true
-  logseq.provideUI({
-    key: 'bermaid-context-menu',
-    path: 'body',
-    template: `
-      <div class="bermaid-context-menu" style="left: ${x}px; top: ${y}px;">
-        <div class="bermaid-context-menu-item" data-on-click="bermaidCopyImage" data-block-uuid="${uuid}">
-          📋 Copy as PNG
-        </div>
-      </div>
-    `,
-  })
-}
-
-/**
  * Show fullscreen lightbox for a rendered diagram
  */
 function showFullscreen(uuid: string): void {
   const svg = svgCache.get(uuid)
   if (!svg) return
 
-  // Reset zoom/pan for each fresh open
-  lightboxZoom = 1
-  lightboxPanX = 0
-  lightboxPanY = 0
-  lightboxDragState = null
+  resetLightboxState()
   fullscreenVisible = true
 
   logseq.provideUI({
@@ -230,30 +243,13 @@ function hideFullscreen(): void {
   if (!fullscreenVisible) return
 
   fullscreenVisible = false
-  lightboxDragState = null
-  lightboxZoom = 1
-  lightboxPanX = 0
-  lightboxPanY = 0
+  resetLightboxState()
 
   logseq.provideUI({
     key: 'bermaid-fullscreen',
     path: 'body',
     template: '',
   })
-}
-
-/**
- * Hide context menu
- */
-function hideContextMenu(): void {
-  if (contextMenuVisible) {
-    contextMenuVisible = false
-    logseq.provideUI({
-      key: 'bermaid-context-menu',
-      path: 'body',
-      template: '',
-    })
-  }
 }
 
 /**
@@ -268,8 +264,9 @@ async function getBlockWidth(uuid: string): Promise<number> {
   try {
     if (await isDbGraph()) {
       const block = await logseq.Editor.getBlock(uuid)
-      const width = (block as any)?.properties?.['bermaid-width']
-      if (width && typeof width === 'number') {
+      const raw = (block as any)?.properties?.['bermaid-width']
+      const width = typeof raw === 'number' ? raw : Number(raw)
+      if (width && Number.isFinite(width)) {
         widthCache.set(uuid, width)
         return width
       }
@@ -302,10 +299,7 @@ function buildDiagramHtml(blockUuid: string, svg: string, width: number): string
       <div class="bermaid-resize-handle bermaid-resize-left" data-side="left"></div>
       <div class="bermaid-container"
            data-on-click="bermaidOpenFullscreen"
-           data-on-contextmenu="bermaidContextMenu"
-           data-block-uuid="${blockUuid}"
-           data-rect='{"x":0,"y":0}'
-           data-prevent-default="true">
+           data-block-uuid="${blockUuid}">
         ${svg}
       </div>
       <button class="bermaid-copy-btn"
@@ -372,20 +366,6 @@ async function main() {
       const uuid = e.dataset?.blockUuid
       if (uuid) {
         await copyImageToClipboard(uuid)
-        hideContextMenu()
-      }
-    },
-    async bermaidContextMenu(e: any) {
-      e.preventDefault?.()
-      const uuid = e.dataset?.blockUuid
-      const rect = e.dataset?.rect
-      if (uuid && rect) {
-        try {
-          const { x, y } = JSON.parse(rect)
-          showContextMenu(uuid, x, y)
-        } catch {
-          // rect dataset was stale or malformed — skip
-        }
       }
     },
     async bermaidOpenFullscreen(e: any) {
@@ -403,12 +383,12 @@ async function main() {
     },
     async bermaidZoomIn(e: any) {
       e?.stopPropagation?.()
-      lightboxZoom = Math.min(lightboxZoom * 1.25, 8)
+      lightboxZoom = Math.min(lightboxZoom * ZOOM_STEP, ZOOM_MAX)
       updateLightboxTransform()
     },
     async bermaidZoomOut(e: any) {
       e?.stopPropagation?.()
-      lightboxZoom = Math.max(lightboxZoom / 1.25, 0.125)
+      lightboxZoom = Math.max(lightboxZoom / ZOOM_STEP, ZOOM_MIN)
       updateLightboxTransform()
     },
     async bermaidZoomReset(e: any) {
@@ -445,28 +425,7 @@ async function main() {
   if (hostDoc) {
     const doc = hostDoc
 
-    // Cache bermaid container elements to avoid querySelectorAll on every mousemove.
-    // Refresh the cache when the DOM mutates (new diagrams rendered / removed).
-    let cachedContainers: NodeListOf<Element> | null = null
-    const refreshContainerCache = () => { cachedContainers = null }
-    const observer = new MutationObserver(refreshContainerCache)
-    observer.observe(doc.body, { childList: true, subtree: true })
-    offHooks.push(() => observer.disconnect())
-
-    const getContainers = () => {
-      if (!cachedContainers) {
-        cachedContainers = doc.querySelectorAll('.bermaid-container[data-on-contextmenu]')
-      }
-      return cachedContainers
-    }
-
     const onMouseMove = (e: MouseEvent) => {
-      // Update context menu position attribute
-      const containers = getContainers()
-      containers.forEach((el: any) => {
-        el.dataset.rect = JSON.stringify({ x: e.clientX, y: e.clientY })
-      })
-
       // Handle resize dragging
       if (resizeState) {
         const delta = e.clientX - resizeState.startX
@@ -480,9 +439,8 @@ async function main() {
         }
         
         // Clamp width
-        const minWidth = 200
-        const maxWidth = Math.max(wrapper.parentElement?.offsetWidth || 1200, 1200)
-        newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth))
+        const maxWidth = Math.max(wrapper.parentElement?.offsetWidth || MAX_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH)
+        newWidth = Math.max(MIN_DIAGRAM_WIDTH, Math.min(maxWidth, newWidth))
         
         wrapper.style.width = `${newWidth}px`
         
@@ -537,10 +495,6 @@ async function main() {
         e.preventDefault()
       }
 
-      // Hide context menu on any click
-      if (!target?.closest('.bermaid-context-menu')) {
-        hideContextMenu()
-      }
     }
 
     // Mouse up - finish resize or lightbox pan
@@ -567,8 +521,8 @@ async function main() {
       const target = e.target as HTMLElement
       if (!target?.closest?.('.bermaid-lightbox')) return
       e.preventDefault()
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15
-      const newZoom = Math.max(0.125, Math.min(8, lightboxZoom * zoomFactor))
+      const zoomFactor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP
+      const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, lightboxZoom * zoomFactor))
       // Zoom toward cursor position relative to content center
       const contentEl = doc.querySelector('.bermaid-lightbox-content') as HTMLElement | null
       if (contentEl) {
@@ -582,17 +536,8 @@ async function main() {
       updateLightboxTransform()
     }
 
-    // Hide context menu on scroll or another context menu
-    const onContextMenu = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (!target?.closest('.bermaid-container')) {
-        hideContextMenu()
-      }
-    }
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        hideContextMenu()
         hideFullscreen()
       }
     }
@@ -601,8 +546,6 @@ async function main() {
     doc.addEventListener('mousedown', onMouseDown, true)
     doc.addEventListener('mouseup', onMouseUp, true)
     doc.addEventListener('wheel', onWheel, { capture: true, passive: false })
-    doc.addEventListener('scroll', hideContextMenu, true)
-    doc.addEventListener('contextmenu', onContextMenu, true)
     doc.addEventListener('keydown', onKeyDown, true)
 
     offHooks.push(() => {
@@ -610,8 +553,6 @@ async function main() {
       doc.removeEventListener('mousedown', onMouseDown, true)
       doc.removeEventListener('mouseup', onMouseUp, true)
       doc.removeEventListener('wheel', onWheel, true)
-      doc.removeEventListener('scroll', hideContextMenu, true)
-      doc.removeEventListener('contextmenu', onContextMenu, true)
       doc.removeEventListener('keydown', onKeyDown, true)
     })
   }
@@ -635,7 +576,6 @@ async function main() {
   }
 
   logseq.beforeunload(async () => {
-    hideContextMenu()
     hideFullscreen()
     resizeState = null
     for (const off of offHooks) {
@@ -667,14 +607,14 @@ async function main() {
       // The renderer slot can fire before the child mermaid block has been
       // committed (e.g. immediately after /bermaid inserts the macro).
       // Retry for up to ~1.5 s so we don't flash the "no child" error.
-      let block: any = null
-      let children: any[] = []
-      for (let attempt = 0; attempt < 6; attempt += 1) {
-        if (attempt > 0) await sleep(250)
-        block = await logseq.Editor.getBlock(blockUuid, { includeChildren: true }).catch(() => null)
-        children = block?.children || []
-        if (children.length > 0) break
-      }
+      const block = await retry(
+        async () => {
+          const b = await logseq.Editor.getBlock(blockUuid, { includeChildren: true }).catch(() => null)
+          return b?.children?.length ? b : null
+        },
+        { attempts: 6, delay: 250 },
+      )
+      const children: any[] = block?.children || []
 
       if (!block) {
         renderSlot(blockUuid, slot, `<div class="bermaid-error">Block not found — try reloading the page.</div>`)
@@ -728,18 +668,19 @@ async function main() {
 
       let parentBlock: any = null
       if (targetUuid) {
-        for (let attempt = 1; attempt <= 5; attempt += 1) {
-          parentBlock = await logseq.Editor.getBlock(targetUuid).catch(() => null)
-          if (parentBlock?.uuid) break
-          await sleep(100)
-        }
+        parentBlock = await retry(
+          async () => {
+            const b = await logseq.Editor.getBlock(targetUuid).catch(() => null)
+            return b?.uuid ? b : null
+          },
+          { attempts: 5, delay: 100 },
+        )
       }
-
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
-        if (parentBlock?.uuid) break
-        parentBlock = await logseq.Editor.getCurrentBlock().catch(() => null)
-        if (parentBlock?.uuid) break
-        await sleep(100)
+      if (!parentBlock?.uuid) {
+        parentBlock = await retry(
+          () => logseq.Editor.getCurrentBlock().catch(() => null),
+          { attempts: 5, delay: 100 },
+        )
       }
 
       if (!parentBlock?.uuid) {
@@ -752,32 +693,22 @@ async function main() {
       await logseq.Editor.exitEditingMode(true).catch(() => null)
       await sleep(100)
 
-      let rendererUpdated = false
-      let lastUpdateError: unknown = null
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
-        try {
-          await logseq.Editor.updateBlock(parentBlock.uuid, '{{renderer :bermaid}}')
-          rendererUpdated = true
-          break
-        } catch (error) {
-          lastUpdateError = error
-          const message = error instanceof Error ? error.message : String(error)
-          const retryable = message.includes('[deferred timeout]') || message.includes('entity id, got 0')
-          if (!retryable || attempt === 5) break
-          await sleep(300)
-        }
-      }
-
-      if (!rendererUpdated) {
-        const msg = lastUpdateError instanceof Error ? lastUpdateError.message : String(lastUpdateError ?? 'unknown error')
-        console.warn('Bermaid: Failed to update renderer block after retries', lastUpdateError)
+      try {
+        await retry(
+          async () => {
+            await logseq.Editor.updateBlock(parentBlock.uuid, '{{renderer :bermaid}}')
+            return true
+          },
+          { retryIf: isRetryableDbError },
+        )
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn('Bermaid: Failed to update renderer block after retries', err)
         logseq.UI.showMsg(`❌ Failed to add renderer to block: ${msg}`, 'error')
         return
       }
 
       const childTemplate = '```mermaid\ngraph TD\n    A[Start] --> B{Decision}\n    B -->|Yes| C[Action]\n    B -->|No| D[End]\n```'
-      let childBlock: any = null
-      let lastInsertError: unknown = null
 
       // Wait for the parent block update to be committed to the DB before inserting a child.
       // In DB-based graphs, the entity may not be persisted immediately,
@@ -788,23 +719,18 @@ async function main() {
       const refreshed = await logseq.Editor.getBlock(parentBlock.uuid).catch(() => null)
       const insertUuid = refreshed?.uuid ?? parentBlock.uuid
 
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
-        try {
-          childBlock = await logseq.Editor.insertBlock(insertUuid, childTemplate, { sibling: false })
-          if (childBlock?.uuid) break
-        } catch (error) {
-          lastInsertError = error
-          const message = error instanceof Error ? error.message : String(error)
-          const retryable = message.includes('[deferred timeout]') || message.includes('entity id, got 0')
-          if (!retryable || attempt === 5) break
-          await sleep(300)
-        }
-      }
+      const childBlock = await retry(
+        async () => {
+          const b = await logseq.Editor.insertBlock(insertUuid, childTemplate, { sibling: false })
+          return b?.uuid ? b : null
+        },
+        { retryIf: isRetryableDbError },
+      ).catch((err) => {
+        console.warn('Bermaid: Failed to insert child mermaid block after retries', err)
+        return null
+      })
 
-      if (!childBlock?.uuid) {
-        if (lastInsertError) console.warn('Bermaid: Failed to insert child mermaid block after retries', lastInsertError)
-        return
-      }
+      if (!childBlock) return
 
       // Avoid DB schema-specific child metadata writes here; they can fail on
       // some graphs and are not required for Bermaid rendering.

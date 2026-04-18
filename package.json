@@ -12,13 +12,6 @@
   "version": "0.2.1",
   "author": "Danzu",
   "license": "MIT",
-  "theme": false,
-  "web": true,
-  "supportsDB": true,
-  "supportsDBOnly": false,
-  "effect": false,
-  "sponsors": [],
-  "main": "dist/index.js",
   "scripts": {
     "build": "vite build",
     "watch": "vite build --watch",
@@ -33,7 +26,7 @@
     "url": "git+https://github.com/danzu/logseq-bermaid.git"
   },
   "dependencies": {
-    "@logseq/libs": "^0.2.12",
+    "@logseq/libs": "^0.3.2",
     "beautiful-mermaid": "1.1.3"
   },
   "devDependencies": {
@@ -47,6 +40,12 @@
     "title": "Bermaid - Diagrams",
     "description": "Beautiful mermaid diagram renderer for Logseq using beautiful-mermaid",
     "icon": "./icon.svg",
-    "main": "dist/index.html"
+    "main": "dist/index.html",
+    "theme": false,
+    "web": true,
+    "supportsDB": true,
+    "supportsDBOnly": false,
+    "effect": false,
+    "sponsors": []
   }
 }
