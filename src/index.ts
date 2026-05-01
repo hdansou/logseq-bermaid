@@ -1,5 +1,4 @@
 import '@logseq/libs'
-import { renderMermaid, THEMES } from 'beautiful-mermaid'
 import type { RenderOptions } from 'beautiful-mermaid'
 import {
   AUTO_THEME, DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES,
@@ -7,6 +6,16 @@ import {
   ZOOM_MIN, ZOOM_MAX, ZOOM_STEP,
   SVG_CACHE_CAP, WIDTH_CACHE_CAP, RENDERED_SLOTS_CAP,
 } from './constants'
+
+// Lazy-load beautiful-mermaid (~1.6 MB) — defers the heavy bundle until
+// the user actually renders a {{renderer :bermaid}} macro.
+let beautifulMermaidPromise: Promise<typeof import('beautiful-mermaid')> | null = null
+function loadBeautifulMermaid() {
+  if (!beautifulMermaidPromise) {
+    beautifulMermaidPromise = import('beautiful-mermaid')
+  }
+  return beautifulMermaidPromise
+}
 import { BERMAID_STYLES } from './styles'
 import { svgToPngBlob } from './utils/svg'
 import { escapeHtml } from './utils/text'
@@ -109,7 +118,7 @@ function getSettings() {
   }
 }
 
-function buildRenderOptions(): RenderOptions {
+function buildRenderOptions(THEMES: Record<string, RenderOptions>): RenderOptions {
   const { theme, transparentBg } = getSettings()
   const resolvedTheme = theme === 'auto'
     ? AUTO_THEME[currentThemeMode] || 'tokyo-night'
@@ -167,7 +176,8 @@ function trimSvgTopWhitespace(svg: string): string {
 }
 
 async function renderDiagram(mermaidSyntax: string): Promise<string> {
-  const opts = buildRenderOptions()
+  const { renderMermaid, THEMES } = await loadBeautifulMermaid()
+  const opts = buildRenderOptions(THEMES as unknown as Record<string, RenderOptions>)
   const svg = await renderMermaid(mermaidSyntax, opts)
   return trimSvgTopWhitespace(svg)
 }
