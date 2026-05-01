@@ -169,13 +169,11 @@ Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packag
 - **Renderer slot `display: inline-flex`** — SVGs and large content need `width: 100%` CSS override to fill the slot.
 - **DB property values may be strings** — `getBlock().properties` in DB graphs can return property values as strings even when written as numbers (e.g. `bermaid-width`). Always coerce with `Number()` and validate with `Number.isFinite()` before use.
 
-### Known `npm audit` Vulnerabilities (Accepted Risk)
+### Dependency Overrides
 
-`npm audit` reports vulnerabilities in transitive dependencies of `@logseq/libs@0.3.2` that have no upstream fix. The plugin does not call DOMPurify or lodash directly.
+`package.json` declares `overrides` for two transitive deps of `@logseq/libs@0.3.2`:
 
-- **dompurify ≤3.3.3** (moderate — `ADD_TAGS` bypasses `FORBID_TAGS`, GHSA-39q2-94rc-95cp) — no fix available upstream.
-- **lodash-es ≤4.17.23** (high — code injection via `_.template` GHSA-r5fr-rjxr-66jc, prototype pollution GHSA-f23m-r3pf-42rh) — would require a patched `@logseq/libs` release.
+- `lodash-es: ^4.18.1` — clears GHSA-r5fr-rjxr-66jc (`_.template` code injection) and GHSA-f23m-r3pf-42rh (prototype pollution in `_.unset`/`_.omit`). `@logseq/libs` ships an older lodash-es; the override forces the patched line.
+- `dompurify: ^3.4.2` — clears GHSA-39q2-94rc-95cp and three related XSS/bypass advisories. Same reason: `@logseq/libs` ships 3.3.3.
 
-Risk is accepted because the plugin runs inside the Logseq sandbox and does not feed untrusted input into these libraries.
-
-The previous `dompurify` advisory (GHSA-v2wj-7wpq-c8vv, XSS in 3.1.3–3.3.1) cleared when `@logseq/libs` bumped to 0.3.2 (dompurify 3.3.3). Build-time dev deps (`vite`, `rollup`, `picomatch`) also have advisories; resolvable with `npm audit fix` if they become blocking — they do not ship in the plugin bundle.
+`npm audit` should report 0 vulnerabilities. If a future `@logseq/libs` upgrade requires older majors, drop or relax the override.

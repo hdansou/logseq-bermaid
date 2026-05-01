@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Security
+
+- Bumped `vite` `^7.2.2` → `^7.3.2` to clear GHSA-4w7w-66w2-5vf9, GHSA-v2wj-q39q-566r, and GHSA-p9ff-h696-f583 (and transitively patched `rollup`, `picomatch`, `postcss`).
+- Added `package.json` `overrides` to force patched `lodash-es@^4.18.1` (clears GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh) and `dompurify@^3.4.2` (clears GHSA-39q2-94rc-95cp + three related advisories) through `@logseq/libs`. `npm audit` now reports 0 vulnerabilities; the previously documented "Accepted Risk" entries in `CLAUDE.md` are no longer applicable.
+- `escapeHtml` now also escapes `'` — defensive: no live XSS, but a future single-quoted attribute template would have silently regressed.
+
 ### Changed
 
 - Upgraded `@logseq/libs` from 0.2.12 to 0.3.2. Adds MessageChannel-based host↔plugin messaging (performance); clears the dompurify GHSA-v2wj-7wpq-c8vv advisory via the transitive bump to 3.3.3. No call-site changes required; all APIs the plugin uses are signature-compatible.
