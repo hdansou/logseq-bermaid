@@ -28,8 +28,9 @@ Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [bea
    npm run build
    ```
 
-3. In Logseq, go to **Plugins → Load unpacked plugin**.
-4. Select this project folder.
+3. Load into Logseq:
+   - **Desktop:** Plugins → **Load unpacked plugin** → select this project folder.
+   - **Web (`http://localhost:3001`):** run `npm run serve` and follow the [Development](#development) instructions to load from `http://localhost:8080`.
 
 ## Usage
 

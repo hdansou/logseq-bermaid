@@ -113,6 +113,9 @@ if (import.meta.hot) {
     },
 
     async buildStart() {
+      // Dev-only: writes a dist/index.html that points at the dev server via
+      // <base href>. Releases must always run `npm run build` first so the
+      // production index.html overwrites this one — see .github/workflows/publish.yml.
       if (configEnv.command !== 'serve' || !server?.httpServer) {
         return
       }

@@ -54,6 +54,6 @@ Adjust `author` and `repo` if your canonical GitHub owner/repo differs.
 ## 4) Pre-submit checks
 
 - README clearly explains install and usage
-- At least one visual image/gif in README showing the plugin in action (**pending** — see TODO.md)
+- At least one visual image/gif in README showing the plugin in action (**pending**)
 - `package.json` has valid `logseq` fields (`id`, `title`, `main`, `icon`)
 - Latest release loads correctly via **Load unpacked plugin** and release zip install
