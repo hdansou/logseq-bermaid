@@ -1,4 +1,5 @@
 import '@logseq/libs'
+import type { BlockEntity, BlockUUIDTuple } from '@logseq/libs/dist/LSPlugin'
 import type { RenderOptions } from 'beautiful-mermaid'
 import {
   AUTO_THEME, DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES,
@@ -130,13 +131,13 @@ function buildRenderOptions(THEMES: Record<string, RenderOptions>): RenderOption
 }
 
 /** Normalize DB/file-graph block content field */
-function getBlockText(block: any): string {
+function getBlockText(block: BlockEntity | null | undefined): string {
   return block?.content || block?.title || ''
 }
 
 /** Return true when running inside a DB-based graph */
 async function isDbGraph(): Promise<boolean> {
-  return (logseq.App as any).checkCurrentIsDbGraph().catch(() => false)
+  return logseq.App.checkCurrentIsDbGraph().then(Boolean).catch(() => false)
 }
 
 /** Inject plugin UI into a renderer slot */
@@ -199,17 +200,19 @@ async function copyImageToClipboard(uuid: string): Promise<void> {
     try {
       await navigator.clipboard.write([clipboardItem])
     } catch {
-      let hostScope: any = null
+      let hostScope: unknown = null
       try { hostScope = await logseq.Experiments.ensureHostScope() } catch { /* ignore */ }
-      const clipboard = hostScope?.navigator?.clipboard
+      const clipboard = (hostScope as { navigator?: { clipboard?: Clipboard } } | null)
+        ?.navigator?.clipboard
       if (!clipboard) throw new Error('Clipboard API not available')
       await clipboard.write([clipboardItem])
     }
-    
+
     logseq.UI.showMsg('✅ Diagram copied as PNG', 'success')
-  } catch (err: any) {
+  } catch (err) {
     console.error('Failed to copy image:', err)
-    logseq.UI.showMsg(`❌ Failed to copy: ${err.message}`, 'error')
+    const message = err instanceof Error ? err.message : String(err)
+    logseq.UI.showMsg(`❌ Failed to copy: ${message}`, 'error')
   }
 }
 
@@ -274,7 +277,7 @@ async function getBlockWidth(uuid: string): Promise<number> {
   try {
     if (await isDbGraph()) {
       const block = await logseq.Editor.getBlock(uuid)
-      const raw = (block as any)?.properties?.['bermaid-width']
+      const raw = block?.properties?.['bermaid-width']
       const width = typeof raw === 'number' ? raw : Number(raw)
       if (width && Number.isFinite(width)) {
         widthCache.set(uuid, width)
@@ -411,7 +414,7 @@ async function main() {
   })
 
   // --- Host Scope Event Listeners for Resize/Zoom/Pan ---
-  let hostScope: any = null
+  let hostScope: unknown = null
   try {
     hostScope = await Promise.resolve(logseq.Experiments.ensureHostScope())
   } catch (err) {
@@ -421,9 +424,11 @@ async function main() {
   // hostDoc declared above (before provideModel); resolve it here.
   try {
     // ensureHostScope() returns the host window proxy; .document is most reliable
-    hostDoc = (hostScope as any)?.document
-      ?? (hostScope as any)?.window?.document
-      ?? (hostScope as any)?.window?.top?.document
+    type HostScopeShape = { document?: Document; window?: { document?: Document; top?: { document?: Document } } }
+    const hs = hostScope as HostScopeShape | null
+    hostDoc = hs?.document
+      ?? hs?.window?.document
+      ?? hs?.window?.top?.document
       ?? null
     if (!hostDoc) {
       console.warn('Bermaid: Could not resolve host document')
@@ -624,7 +629,7 @@ async function main() {
         },
         { attempts: 6, delay: 250 },
       )
-      const children: any[] = block?.children || []
+      const children: Array<BlockEntity | BlockUUIDTuple> = block?.children || []
 
       if (!block) {
         renderSlot(blockUuid, slot, `<div class="bermaid-error">Block not found — try reloading the page.</div>`)
@@ -638,7 +643,8 @@ async function main() {
 
       const mermaidLines: string[] = []
       for (const child of children) {
-        if (typeof child === 'string') continue
+        // Children may be BlockEntity or ['uuid', BlockUUID] tuples; only the entity form has text.
+        if (Array.isArray(child)) continue
         const text = getBlockText(child)
         if (text) mermaidLines.push(text)
       }
@@ -666,8 +672,8 @@ async function main() {
       const width = await getBlockWidth(blockUuid)
 
       renderSlot(blockUuid, slot, buildDiagramHtml(blockUuid, svg, width))
-    } catch (err: any) {
-      const message = err?.message || String(err)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
       renderSlot(blockUuid, slot, `<div class="bermaid-error">Invalid Mermaid syntax — check the child block.\n${escapeHtml(message)}</div>`)
     }
   })
@@ -676,7 +682,7 @@ async function main() {
     try {
       await sleep(100)
 
-      let parentBlock: any = null
+      let parentBlock: BlockEntity | null = null
       if (targetUuid) {
         parentBlock = await retry(
           async () => {
@@ -688,7 +694,11 @@ async function main() {
       }
       if (!parentBlock?.uuid) {
         parentBlock = await retry(
-          () => logseq.Editor.getCurrentBlock().catch(() => null),
+          async () => {
+            const b = await logseq.Editor.getCurrentBlock().catch(() => null)
+            // getCurrentBlock can return PageEntity; we need a block (uuid present).
+            return b && 'uuid' in b ? (b as BlockEntity) : null
+          },
           { attempts: 5, delay: 100 },
         )
       }
@@ -751,8 +761,8 @@ async function main() {
   }
 
   // --- Slash Command ---
-  logseq.Editor.registerSlashCommand('bermaid', async (event: any) => {
-    const targetUuid = event?.uuid || event?.blockUuid
+  logseq.Editor.registerSlashCommand('bermaid', async (event) => {
+    const targetUuid = event?.uuid ?? (event as { blockUuid?: string } | undefined)?.blockUuid
     setTimeout(() => {
       void insertBermaidTemplate(targetUuid)
     }, 0)
