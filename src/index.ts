@@ -1,24 +1,13 @@
 import '@logseq/libs'
 import type { BlockEntity, BlockUUIDTuple } from '@logseq/libs/dist/LSPlugin'
-import type { RenderOptions } from 'beautiful-mermaid'
 import {
-  AUTO_THEME, DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES,
+  DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES,
   MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH,
   ZOOM_MIN, ZOOM_MAX, ZOOM_STEP,
-  SVG_CACHE_CAP, WIDTH_CACHE_CAP, RENDERED_SLOTS_CAP,
 } from './constants'
-
-// Lazy-load beautiful-mermaid (~1.6 MB) — defers the heavy bundle until
-// the user actually renders a {{renderer :bermaid}} macro.
-let beautifulMermaidPromise: Promise<typeof import('beautiful-mermaid')> | null = null
-function loadBeautifulMermaid() {
-  if (!beautifulMermaidPromise) {
-    beautifulMermaidPromise = import('beautiful-mermaid')
-  }
-  return beautifulMermaidPromise
-}
+import { svgCache, widthCache, renderedSlots } from './cache'
+import { renderDiagram, copyImageToClipboard, type RenderConfig } from './render'
 import { BERMAID_STYLES } from './styles'
-import { svgToPngBlob } from './utils/svg'
 import { escapeHtml } from './utils/text'
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -49,34 +38,7 @@ function isRetryableDbError(err: unknown): boolean {
   return msg.includes('[deferred timeout]') || msg.includes('entity id, got 0')
 }
 
-/** Size-capped Map that evicts the least-recently-inserted entry when full. */
-class CappedMap<K, V> extends Map<K, V> {
-  constructor(private maxSize: number) { super() }
-  set(key: K, value: V): this {
-    if (this.has(key)) this.delete(key)
-    super.set(key, value)
-    if (this.size > this.maxSize) {
-      const oldest = this.keys().next().value!
-      this.delete(oldest)
-    }
-    return this
-  }
-}
-
 let currentThemeMode: string = 'dark'
-
-/** Rendered SVG strings keyed by block UUID, for copy-to-clipboard */
-const svgCache = new CappedMap<string, string>(SVG_CACHE_CAP)
-
-/** In-memory width cache to avoid redundant async lookups */
-const widthCache = new CappedMap<string, number>(WIDTH_CACHE_CAP)
-
-/** Tracks rendered diagram slots for re-rendering on theme change */
-interface RenderedSlot {
-  slot: string
-  mermaidSyntax: string
-}
-const renderedSlots = new CappedMap<string, RenderedSlot>(RENDERED_SLOTS_CAP)
 
 /** Fullscreen lightbox visibility state */
 let fullscreenVisible = false
@@ -119,15 +81,9 @@ function getSettings() {
   }
 }
 
-function buildRenderOptions(THEMES: Record<string, RenderOptions>): RenderOptions {
+function getRenderConfig(): RenderConfig {
   const { theme, transparentBg } = getSettings()
-  const resolvedTheme = theme === 'auto'
-    ? AUTO_THEME[currentThemeMode] || 'tokyo-night'
-    : theme
-  return {
-    transparent: transparentBg,
-    ...(THEMES?.[resolvedTheme] ?? {}),
-  }
+  return { themeMode: currentThemeMode, theme, transparentBg }
 }
 
 /** Normalize DB/file-graph block content field */
@@ -143,77 +99,6 @@ async function isDbGraph(): Promise<boolean> {
 /** Inject plugin UI into a renderer slot */
 function renderSlot(blockUuid: string, slot: string, template: string): void {
   logseq.provideUI({ key: `bermaid-${blockUuid}`, slot, template })
-}
-
-/**
- * Trim the empty top whitespace from a beautiful-mermaid SVG by adjusting
- * the viewBox and height so the diagram content starts at the top.
- */
-function trimSvgTopWhitespace(svg: string): string {
-  // Find all numeric y-attribute values to determine where content actually starts
-  const yValues = [...svg.matchAll(/\sy="([\d.]+)"/g)].map(m => parseFloat(m[1]))
-  if (yValues.length === 0) return svg
-
-  const minY = Math.min(...yValues)
-  if (minY <= 0) return svg
-
-  // Parse existing viewBox: "0 0 width height"
-  const vbMatch = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)
-  if (!vbMatch) return svg
-
-  const svgWidth = parseFloat(vbMatch[1])
-  const svgHeight = parseFloat(vbMatch[2])
-
-  // Keep a small buffer at the top
-  const BUFFER = 5
-  const trimAmount = Math.max(0, minY - BUFFER)
-  const newHeight = svgHeight - trimAmount
-
-  return svg
-    .replace(`viewBox="0 0 ${vbMatch[1]} ${vbMatch[2]}"`, `viewBox="0 ${trimAmount} ${svgWidth} ${newHeight}"`)
-    // Replace height only within the root <svg> opening tag; a plain string replace
-    // would match the same value on child elements (e.g. <rect height="600">) first.
-    .replace(/(<svg\b[\s\S]*?)\bheight="[\d.]+"/, `$1height="${newHeight}"`)
-}
-
-async function renderDiagram(mermaidSyntax: string): Promise<string> {
-  const { renderMermaid, THEMES } = await loadBeautifulMermaid()
-  const opts = buildRenderOptions(THEMES as unknown as Record<string, RenderOptions>)
-  const svg = await renderMermaid(mermaidSyntax, opts)
-  return trimSvgTopWhitespace(svg)
-}
-
-/**
- * Copy SVG as PNG to clipboard
- */
-async function copyImageToClipboard(uuid: string): Promise<void> {
-  try {
-    const svg = svgCache.get(uuid)
-    if (!svg) {
-      throw new Error('SVG not found in cache')
-    }
-
-    const { transparentBg } = getSettings()
-    const blob = await svgToPngBlob(svg, transparentBg)
-    
-    const clipboardItem = new ClipboardItem({ 'image/png': blob })
-    try {
-      await navigator.clipboard.write([clipboardItem])
-    } catch {
-      let hostScope: unknown = null
-      try { hostScope = await logseq.Experiments.ensureHostScope() } catch { /* ignore */ }
-      const clipboard = (hostScope as { navigator?: { clipboard?: Clipboard } } | null)
-        ?.navigator?.clipboard
-      if (!clipboard) throw new Error('Clipboard API not available')
-      await clipboard.write([clipboardItem])
-    }
-
-    logseq.UI.showMsg('✅ Diagram copied as PNG', 'success')
-  } catch (err) {
-    console.error('Failed to copy image:', err)
-    const message = err instanceof Error ? err.message : String(err)
-    logseq.UI.showMsg(`❌ Failed to copy: ${message}`, 'error')
-  }
 }
 
 /**
@@ -378,7 +263,7 @@ async function main() {
     async bermaidCopyImage(e: any) {
       const uuid = e.dataset?.blockUuid
       if (uuid) {
-        await copyImageToClipboard(uuid)
+        await copyImageToClipboard(uuid, getSettings().transparentBg)
       }
     },
     async bermaidOpenFullscreen(e: any) {
@@ -576,8 +461,9 @@ async function main() {
   const offThemeModeChanged = logseq.App.onThemeModeChanged(({ mode }) => {
     currentThemeMode = mode
     // Re-render all tracked diagrams with the new theme
+    const config = getRenderConfig()
     for (const [uuid, { slot, mermaidSyntax }] of renderedSlots) {
-      renderDiagram(mermaidSyntax).then(async (svg) => {
+      renderDiagram(mermaidSyntax, config).then(async (svg) => {
         svgCache.set(uuid, svg)
         const width = await getBlockWidth(uuid)
         renderSlot(uuid, slot, buildDiagramHtml(uuid, svg, width))
@@ -666,7 +552,7 @@ async function main() {
         return
       }
 
-      const svg = await renderDiagram(mermaidSyntax)
+      const svg = await renderDiagram(mermaidSyntax, getRenderConfig())
       svgCache.set(blockUuid, svg)
       renderedSlots.set(blockUuid, { slot, mermaidSyntax })
       const width = await getBlockWidth(blockUuid)

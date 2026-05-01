@@ -133,7 +133,9 @@ All theme names are defined in `src/constants.ts`.
 
 | File                         | Purpose                                                                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/index.ts`               | Entire plugin logic — settings, hooks, event handlers, rendering, lightbox                                                           |
+| `src/index.ts`               | Plugin entry — settings, hooks, event handlers, lightbox, resize, slash command                                                      |
+| `src/render.ts`              | Mermaid render pipeline — lazy-loads `beautiful-mermaid`, builds options, trims SVG, copy-to-PNG                                     |
+| `src/cache.ts`               | `CappedMap` LRU + the three cache instances (`svgCache`, `widthCache`, `renderedSlots`) and `RenderedSlot` type                      |
 | `src/constants.ts`           | Theme choices, auto-theme mapping, default width (250px)                                                                             |
 | `src/styles.ts`              | CSS injected into Logseq; includes lightbox, zoom controls, resize handles                                                           |
 | `src/utils/svg.ts`           | SVG to PNG Blob conversion                                                                                                           |
