@@ -6,25 +6,35 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-02
+
+First marketplace-targeted release. Hardening pass: zero `npm audit` advisories, faster cold-load via code splitting, and repo metadata aligned with the canonical `hdansou/logseq-bermaid` repo.
+
 ### Security
 
-- Bumped `vite` `^7.2.2` → `^7.3.2` to clear GHSA-4w7w-66w2-5vf9, GHSA-v2wj-q39q-566r, and GHSA-p9ff-h696-f583 (and transitively patched `rollup`, `picomatch`, `postcss`).
-- Added `package.json` `overrides` to force patched `lodash-es@^4.18.1` (clears GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh) and `dompurify@^3.4.2` (clears GHSA-39q2-94rc-95cp + three related advisories) through `@logseq/libs`. `npm audit` now reports 0 vulnerabilities; the previously documented "Accepted Risk" entries in `CLAUDE.md` are no longer applicable.
-- `escapeHtml` now also escapes `'` — defensive: no live XSS, but a future single-quoted attribute template would have silently regressed.
+- Bumped `vite` `^7.2.2` → `^7.3.2` clearing GHSA-4w7w-66w2-5vf9, GHSA-v2wj-q39q-566r, GHSA-p9ff-h696-f583 (and transitively patches `rollup`, `picomatch`, `postcss`).
+- Added `package.json` `overrides` for `lodash-es@^4.18.1` (clears GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh) and `dompurify@^3.4.2` (clears GHSA-39q2-94rc-95cp + three related advisories). `npm audit` now reports 0 vulnerabilities.
+- `escapeHtml` now also escapes `'` — defensive against future single-quoted attribute templates.
+
+### Performance
+
+- Code-split `beautiful-mermaid` via dynamic `import()`. Cold-load main chunk drops from 1.71 MB to 120 KB (510 KB → 39 KB gzip); the renderer bundle loads on first `{{renderer :bermaid}}` slot.
 
 ### Changed
 
-- Upgraded `@logseq/libs` from 0.2.12 to 0.3.2. Adds MessageChannel-based host↔plugin messaging (performance); clears the dompurify GHSA-v2wj-7wpq-c8vv advisory via the transitive bump to 3.3.3. No call-site changes required; all APIs the plugin uses are signature-compatible.
-- Added `src/__sdk_guard__.ts` — a compile-time assertion that references `logseq.App.getCurrentRoute` (new in 0.3.x). `npm run typecheck` will fail if the SDK is ever downgraded below 0.3.1. Not imported at runtime; tree-shaken out of the bundle.
-- Renamed `dev` script to `watch` (`vite build --watch`) for clarity; added explicit `serve` script (`vite serve`) for the dev HTTP server.
+- Upgraded `@logseq/libs` 0.2.12 → 0.3.2. Adds MessageChannel-based host↔plugin messaging. Compile-time minimum SDK version pinned via `src/__sdk_guard__.ts`.
+- Plugin `id` renamed `logseq-danzu-bermaid` → `logseq-hdansou-bermaid`; repo URLs in `package.json`, docs, and `homepage` now point at `hdansou/logseq-bermaid`.
+- `package.json` `logseq` block declares `minSDKVersion: "0.3.2"` for marketplace consumers.
+- `src/index.ts` slimmed 754 → 660 LOC: cache (`CappedMap` + LRU instances) extracted to `src/cache.ts`; render pipeline (`renderDiagram`, `copyImageToClipboard`, lazy beautiful-mermaid loader) extracted to `src/render.ts`.
+- Tightened `any` at SDK boundaries — `BlockEntity` / `BlockUUIDTuple` types from `@logseq/libs`; explicit `Array.isArray` check on the children-tuple form.
+- Repo hygiene: untracked `.vscode/settings.json`; broadened `.gitignore` (`.env*`, `.vite/`, `.cache/`, `*.local.*`, `tmp/`, `scratch/`); dropped obsolete `TODO.md` and `tasks.md` (folded into `CHANGELOG.md`).
+- CI + publish workflows bumped Node 20 → 22 (current LTS).
+- Renamed `dev` → `watch` script; added explicit `serve` script.
 - Removed unused `vite-plugin-logseq` devDependency (replaced by local `vite-logseq-safe-plugin.ts`).
-- Extended `tsconfig.json` `include` to cover `vite.config.ts` and `vite-logseq-safe-plugin.ts` so `npm run typecheck` validates all project TypeScript.
-- Narrowed `.gitignore` from `.vscode/` to `.vscode/*.code-workspace` so `settings.json` is tracked.
-- Moved `test-insert.js` to `scripts/test-insert.js`; added usage comment header.
 
 ### Fixed
 
-- `registerSlashCommand` callback marked `async` to satisfy `BlockCommandCallback` return-type constraint (latent TypeScript error surfaced by the expanded typecheck scope).
+- `registerSlashCommand` callback marked `async` to satisfy `BlockCommandCallback` return-type constraint.
 
 ## [0.2.1] - 2026-03-01
 
