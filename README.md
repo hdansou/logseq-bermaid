@@ -1,6 +1,6 @@
 # Bermaid
 
-Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [beautiful-mermaid](https://www.npmjs.com/package/beautiful-mermaid) renderer.
+Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) renderer ([npm](https://www.npmjs.com/package/beautiful-mermaid)).
 
 ## Features
 
@@ -116,6 +116,11 @@ git push origin v0.2.1
 Detailed steps and a manifest template are in [docs/MARKETPLACE_SUBMISSION.md](docs/MARKETPLACE_SUBMISSION.md).
 
 > Marketplace review requires at least one screenshot or animated GIF in the README showing the plugin in action.
+
+## Credits
+
+- [**beautiful-mermaid**](https://github.com/lukilabs/beautiful-mermaid) by [lukilabs](https://github.com/lukilabs) — the SVG rendering engine that does all the heavy lifting. Bermaid is a thin Logseq integration around it; the diagrams, themes, and styling come from beautiful-mermaid.
+- [**Mermaid**](https://github.com/mermaid-js/mermaid) — the diagramming language beautiful-mermaid is built on.
 
 ## License
 

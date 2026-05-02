@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-02
+
+### Changed
+
+- Plugin `id` simplified to `logseq-bermaid` (was `logseq-hdansou-bermaid` in 0.2.2; never published to the marketplace under that id). This is the canonical identifier going forward; future releases will not rename it.
+- README: added a Credits section attributing [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) by lukilabs and the [Mermaid](https://github.com/mermaid-js/mermaid) project; the upstream link in the intro now points at the GitHub repo (npm secondary).
+
 ## [0.2.2] - 2026-05-02
 
 First marketplace-targeted release. Hardening pass: zero `npm audit` advisories, faster cold-load via code splitting, and repo metadata aligned with the canonical `hdansou/logseq-bermaid` repo.
