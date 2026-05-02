@@ -7,8 +7,8 @@ Use this checklist when publishing Bermaid to the official Logseq plugin marketp
 1. Push a version tag:
 
    ```bash
-   git tag v0.2.1
-   git push origin v0.2.1
+   git tag v0.2.2
+   git push origin v0.2.2
    ```
 
 2. The workflow in `.github/workflows/publish.yml` builds the plugin and uploads:
@@ -30,7 +30,7 @@ Suggested content:
   "title": "Bermaid - Diagrams",
   "description": "Beautiful mermaid diagram renderer for Logseq using beautiful-mermaid",
   "author": "Danzu",
-  "repo": "danzu/logseq-bermaid",
+  "repo": "hdansou/logseq-bermaid",
   "icon": "./icon.svg",
   "effect": false,
   "theme": false,

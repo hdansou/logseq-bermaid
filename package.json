@@ -8,7 +8,7 @@
     "diagram",
     "visualization"
   ],
-  "homepage": "https://github.com/danzu/logseq-bermaid#readme",
+  "homepage": "https://github.com/hdansou/logseq-bermaid#readme",
   "version": "0.2.1",
   "author": "Danzu",
   "license": "MIT",
@@ -19,11 +19,11 @@
     "typecheck": "tsc --noEmit"
   },
   "bugs": {
-    "url": "https://github.com/danzu/logseq-bermaid/issues"
+    "url": "https://github.com/hdansou/logseq-bermaid/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danzu/logseq-bermaid.git"
+    "url": "git+https://github.com/hdansou/logseq-bermaid.git"
   },
   "dependencies": {
     "@logseq/libs": "^0.3.2",
@@ -40,7 +40,7 @@
     "dompurify": "^3.4.2"
   },
   "logseq": {
-    "id": "logseq-danzu-bermaid",
+    "id": "logseq-hdansou-bermaid",
     "title": "Bermaid - Diagrams",
     "description": "Beautiful mermaid diagram renderer for Logseq using beautiful-mermaid",
     "icon": "./icon.svg",
@@ -50,6 +50,7 @@
     "supportsDB": true,
     "supportsDBOnly": false,
     "effect": false,
+    "minSDKVersion": "0.3.2",
     "sponsors": []
   }
 }
