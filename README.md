@@ -2,6 +2,10 @@
 
 Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) renderer ([npm](https://www.npmjs.com/package/beautiful-mermaid)).
 
+![Bermaid rendering a top-down flowchart in light mode](docs/screenshot-light-td.png)
+
+![Bermaid rendering a left-right decision flow in dark mode](docs/screenshot-dark-lr.png)
+
 ## Features
 
 - Render diagrams from `{{renderer :bermaid}}` using child block content
