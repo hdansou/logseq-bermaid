@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-05-02
+
+### Fixed
+
+- **Top of polygon/circle/path nodes no longer clipped.** The `trimSvgTopWhitespace` post-processing scanned `y="..."` attributes to crop empty space above the diagram, but `<polygon>` (diamond, hexagon), `<circle>` (`cy`/`r`), and `<path>` (stadium) shapes have no `y=` attribute. When a label-rect lay below such a node, the trim used the rect's `y` as the new viewBox top, slicing off the node above it. Affected `graph LR` with circular nodes and any `graph TD` whose topmost shape was a diamond/circle/stadium. Removed the trim entirely; beautiful-mermaid's native viewBox is correct.
+
 ## [0.2.3] - 2026-05-02
 
 ### Changed

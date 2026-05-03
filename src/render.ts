@@ -34,39 +34,10 @@ function buildRenderOptions(
   }
 }
 
-/**
- * Trim the empty top whitespace from a beautiful-mermaid SVG by adjusting
- * the viewBox and height so the diagram content starts at the top.
- */
-function trimSvgTopWhitespace(svg: string): string {
-  const yValues = [...svg.matchAll(/\sy="([\d.]+)"/g)].map(m => parseFloat(m[1]))
-  if (yValues.length === 0) return svg
-
-  const minY = Math.min(...yValues)
-  if (minY <= 0) return svg
-
-  const vbMatch = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/)
-  if (!vbMatch) return svg
-
-  const svgWidth = parseFloat(vbMatch[1])
-  const svgHeight = parseFloat(vbMatch[2])
-
-  const BUFFER = 5
-  const trimAmount = Math.max(0, minY - BUFFER)
-  const newHeight = svgHeight - trimAmount
-
-  return svg
-    .replace(`viewBox="0 0 ${vbMatch[1]} ${vbMatch[2]}"`, `viewBox="0 ${trimAmount} ${svgWidth} ${newHeight}"`)
-    // Replace height only within the root <svg> opening tag; a plain string replace
-    // would match the same value on child elements (e.g. <rect height="600">) first.
-    .replace(/(<svg\b[\s\S]*?)\bheight="[\d.]+"/, `$1height="${newHeight}"`)
-}
-
 export async function renderDiagram(mermaidSyntax: string, config: RenderConfig): Promise<string> {
   const { renderMermaid, THEMES } = await loadBeautifulMermaid()
   const opts = buildRenderOptions(THEMES as unknown as Record<string, RenderOptions>, config)
-  const svg = await renderMermaid(mermaidSyntax, opts)
-  return trimSvgTopWhitespace(svg)
+  return renderMermaid(mermaidSyntax, opts)
 }
 
 /** Copy a previously-rendered SVG as PNG to the system clipboard. */
