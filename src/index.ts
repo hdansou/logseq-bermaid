@@ -5,7 +5,7 @@ import {
   MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH,
   ZOOM_MIN, ZOOM_MAX, ZOOM_STEP,
 } from './constants'
-import { svgCache, widthCache, renderedSlots } from './cache'
+import { svgCache, renderedSlots } from './cache'
 import { renderDiagram, copyImageToClipboard, type RenderConfig } from './render'
 import { BERMAID_STYLES } from './styles'
 import { escapeHtml } from './utils/text'
@@ -91,14 +91,39 @@ function getBlockText(block: BlockEntity | null | undefined): string {
   return block?.content || block?.title || ''
 }
 
-/** Return true when running inside a DB-based graph */
-async function isDbGraph(): Promise<boolean> {
-  return logseq.App.checkCurrentIsDbGraph().then(Boolean).catch(() => false)
-}
-
 /** Inject plugin UI into a renderer slot */
 function renderSlot(blockUuid: string, slot: string, template: string): void {
   logseq.provideUI({ key: `bermaid-${blockUuid}`, slot, template })
+}
+
+/** Parse the second positional macro arg as the diagram width. Clamped, falls back to default. */
+function parseWidthArg(args: ReadonlyArray<string>): number {
+  const raw = args[1]
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_DIAGRAM_WIDTH
+  const n = Number(String(raw).trim())
+  if (!Number.isFinite(n)) return DEFAULT_DIAGRAM_WIDTH
+  return Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, n))
+}
+
+/** Match a {{renderer :bermaid[, ...]}} macro call. Tolerant to whitespace around args. */
+const BERMAID_MACRO_RE = /\{\{renderer\s+:bermaid(?:\s*,[^}]*)?\s*\}\}/
+
+/** Persist width by rewriting the parent block's macro line. */
+async function writeWidthToMacro(uuid: string, width: number): Promise<void> {
+  try {
+    const block = await logseq.Editor.getBlock(uuid)
+    if (!block) return
+    const oldContent = getBlockText(block)
+    const newContent = oldContent.replace(BERMAID_MACRO_RE, `{{renderer :bermaid, ${width}}}`)
+    if (newContent === oldContent) return
+    // updateBlock is silently ignored while the editor holds the block; releasing first
+    // is defensive — on resize-end the user is interacting with the rendered diagram,
+    // not the editor, but better safe than to drop the write.
+    await logseq.Editor.exitEditingMode(true).catch(() => null)
+    await logseq.Editor.updateBlock(uuid, newContent)
+  } catch (err) {
+    console.warn('Bermaid: failed to persist width to macro', err)
+  }
 }
 
 /**
@@ -148,47 +173,6 @@ function hideFullscreen(): void {
     path: 'body',
     template: '',
   })
-}
-
-/**
- * Get persisted width for a block
- */
-async function getBlockWidth(uuid: string): Promise<number> {
-  // Check cache first
-  if (widthCache.has(uuid)) {
-    return widthCache.get(uuid)!
-  }
-  
-  try {
-    if (await isDbGraph()) {
-      const block = await logseq.Editor.getBlock(uuid)
-      const raw = block?.properties?.['bermaid-width']
-      const width = typeof raw === 'number' ? raw : Number(raw)
-      if (width && Number.isFinite(width)) {
-        widthCache.set(uuid, width)
-        return width
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to get block width:', err)
-  }
-  
-  return DEFAULT_DIAGRAM_WIDTH
-}
-
-/**
- * Persist width for a block
- */
-async function setBlockWidth(uuid: string, width: number): Promise<void> {
-  widthCache.set(uuid, width)
-  
-  try {
-    if (await isDbGraph()) {
-      await logseq.Editor.upsertBlockProperty(uuid, 'bermaid-width', width)
-    }
-  } catch (err) {
-    console.warn('Failed to persist block width:', err)
-  }
 }
 
 function buildDiagramHtml(blockUuid: string, svg: string, width: number): string {
@@ -403,10 +387,13 @@ async function main() {
         const wrapper = resizeState.wrapperEl
         wrapper.classList.remove('bermaid-resizing')
         wrapper.style.marginLeft = '' // Clear temporary margin
-        
+
         const finalWidth = wrapper.offsetWidth
-        await setBlockWidth(resizeState.uuid, finalWidth)
+        const { uuid } = resizeState
         resizeState = null
+        // Persist into the macro args. The updateBlock will re-fire
+        // onMacroRendererSlotted, which re-renders at the new width.
+        await writeWidthToMacro(uuid, finalWidth)
       }
       if (lightboxDragState) {
         lightboxDragState = null
@@ -462,10 +449,9 @@ async function main() {
     currentThemeMode = mode
     // Re-render all tracked diagrams with the new theme
     const config = getRenderConfig()
-    for (const [uuid, { slot, mermaidSyntax }] of renderedSlots) {
-      renderDiagram(mermaidSyntax, config).then(async (svg) => {
+    for (const [uuid, { slot, mermaidSyntax, width }] of renderedSlots) {
+      renderDiagram(mermaidSyntax, config).then((svg) => {
         svgCache.set(uuid, svg)
-        const width = await getBlockWidth(uuid)
         renderSlot(uuid, slot, buildDiagramHtml(uuid, svg, width))
       }).catch((err) => {
         console.warn('Bermaid: failed to re-render on theme change', uuid, err)
@@ -552,10 +538,10 @@ async function main() {
         return
       }
 
+      const width = parseWidthArg(payload.arguments)
       const svg = await renderDiagram(mermaidSyntax, getRenderConfig())
       svgCache.set(blockUuid, svg)
-      renderedSlots.set(blockUuid, { slot, mermaidSyntax })
-      const width = await getBlockWidth(blockUuid)
+      renderedSlots.set(blockUuid, { slot, mermaidSyntax, width })
 
       renderSlot(blockUuid, slot, buildDiagramHtml(blockUuid, svg, width))
     } catch (err) {

@@ -71,10 +71,14 @@ All diagram types supported by beautiful-mermaid:
 
 ### FR-8: Drag-to-Resize
 
-- Left and right resize handles are shown on diagram hover
-- Dragging a handle changes diagram width (min 200 px, max parent width or 1200 px)
-- Dragging the left handle keeps the right edge anchored (adjusts `marginLeft`)
-- Width is persisted as a `bermaid-width` block property in DB graphs and restored on re-render
+- Left and right resize handles are shown on diagram hover.
+- Dragging a handle changes diagram width (min 200 px, max parent width or 1200 px).
+- Dragging the left handle keeps the right edge anchored (adjusts `marginLeft`).
+- Width is persisted as the second positional argument of the macro: `{{renderer :bermaid, NNN}}`. On resize end, the parent block is updated via `Editor.updateBlock` to rewrite the macro line with the new width.
+- A macro without a width arg (`{{renderer :bermaid}}`) renders at the default width (250 px).
+- Persistence is graph-agnostic — works in both file-based and DB graphs because the value lives in block content, not a property.
+- Copying the parent block (with its child mermaid block) preserves the width — the diagram is fully self-contained.
+- Legacy: prior to v0.3.0, width was persisted as a `bermaid-width` block property in DB graphs only. v0.3.0+ ignores that property; users on the new version must resize once to embed the width into the macro.
 
 ### FR-9: Lightbox Zoom & Pan
 

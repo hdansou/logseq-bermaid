@@ -28,5 +28,4 @@ export const ZOOM_MIN = 0.125
 export const ZOOM_MAX = 8
 export const ZOOM_STEP = 1.25
 export const SVG_CACHE_CAP = 200
-export const WIDTH_CACHE_CAP = 500
 export const RENDERED_SLOTS_CAP = 200

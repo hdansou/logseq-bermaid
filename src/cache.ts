@@ -1,4 +1,4 @@
-import { SVG_CACHE_CAP, WIDTH_CACHE_CAP, RENDERED_SLOTS_CAP } from './constants'
+import { SVG_CACHE_CAP, RENDERED_SLOTS_CAP } from './constants'
 
 /** Size-capped Map that evicts the least-recently-inserted entry when full. */
 export class CappedMap<K, V> extends Map<K, V> {
@@ -18,13 +18,11 @@ export class CappedMap<K, V> extends Map<K, V> {
 export interface RenderedSlot {
   slot: string
   mermaidSyntax: string
+  width: number
 }
 
 /** Rendered SVG strings keyed by block UUID, for copy-to-clipboard. */
 export const svgCache = new CappedMap<string, string>(SVG_CACHE_CAP)
-
-/** Persisted-width cache keyed by block UUID, to avoid redundant async DB lookups. */
-export const widthCache = new CappedMap<string, number>(WIDTH_CACHE_CAP)
 
 /** Slots tracked across the current session, indexed by block UUID. */
 export const renderedSlots = new CappedMap<string, RenderedSlot>(RENDERED_SLOTS_CAP)

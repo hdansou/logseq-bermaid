@@ -6,6 +6,25 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-02
+
+Width persistence moves from a DB block property into the macro itself: `{{renderer :bermaid, NNN}}`. Self-contained, graph-agnostic, fixes a long-standing duplicate-property bug.
+
+### Fixed
+
+- **Resize no longer creates duplicate `bermaid-width` properties.** v0.2.x persisted the width via `Editor.upsertBlockProperty('bermaid-width', N)`, but Logseq DB defaults un-registered properties to `:db.cardinality/many`, so each resize appended a new value instead of replacing — blocks accumulated entries like `bermaid-width: 248`, `bermaid-width: 352`, `bermaid-width: 589`. v0.3.0 stores the width inside the macro arg, so the cardinality issue can't recur.
+
+### Changed
+
+- **Width is now stored as a macro arg.** `{{renderer :bermaid, 500}}` renders at 500 px; `{{renderer :bermaid}}` falls back to the default (250 px). Resizing a diagram rewrites the parent block via `Editor.updateBlock` to embed the new width. Works in both file-based and DB graphs (the previous block-property approach only persisted in DB graphs).
+- Copying a `{{renderer :bermaid, NNN}}` block plus its mermaid child now preserves the width — diagrams are fully self-contained.
+- Theme-mode re-renders read width from the in-session `renderedSlots` map (no extra DB lookups on theme change).
+
+### Removed
+
+- `getBlockWidth` / `setBlockWidth` / `isDbGraph` helpers and the `widthCache` LRU. Replaced by `parseWidthArg` (read) and `writeWidthToMacro` (write). Also dropped the `WIDTH_CACHE_CAP` constant.
+- The `bermaid-width` block property is no longer read or written. Existing properties on user blocks (if any) are silently ignored — resize once to embed the width into the macro. No upgrade migration: the plugin is hours old on the marketplace, no installs to migrate.
+
 ## [0.2.4] - 2026-05-02
 
 ### Fixed
