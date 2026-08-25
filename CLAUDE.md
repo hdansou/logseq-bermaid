@@ -173,9 +173,19 @@ Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packag
 
 ### Dependency Overrides
 
-`package.json` declares `overrides` for two transitive deps of `@logseq/libs@0.3.2`:
+`package.json` declares `overrides` for five transitive deps. Two come in through `@logseq/libs@0.3.2` (runtime), three through `vite` (build-time only — they never reach `dist/`).
+
+Via `@logseq/libs`:
 
 - `lodash-es: ^4.18.1` — clears GHSA-r5fr-rjxr-66jc (`_.template` code injection) and GHSA-f23m-r3pf-42rh (prototype pollution in `_.unset`/`_.omit`). `@logseq/libs` ships an older lodash-es; the override forces the patched line.
-- `dompurify: ^3.4.2` — clears GHSA-39q2-94rc-95cp and three related XSS/bypass advisories. Same reason: `@logseq/libs` ships 3.3.3.
+- `dompurify: ^3.4.14` — clears a large XSS/sanitizer-bypass cluster (GHSA-hpcv-96wg-7vj8, GHSA-r47g-fvhr-h676, GHSA-x4vx-rjvf-j5p4 and others) affecting `<=3.4.12`. Note that `npm audit` reports these as **"No fix available"**, which is wrong — 3.4.14 is published and clears them. Check the registry directly rather than trusting the advisory text.
 
-`npm audit` should report 0 vulnerabilities. If a future `@logseq/libs` upgrade requires older majors, drop or relax the override.
+Via `vite`:
+
+- `esbuild: ^0.28.2` — clears GHSA-g7r4-m6w7-qqqr (dev-server arbitrary file read on Windows). `vite@7.3.6` still resolves 0.27.3.
+- `postcss: ^8.5.26` — clears GHSA-fxqj-rqcc-2cmp and GHSA-r28c-9q8g-f849 (sourceMappingURL path traversal).
+- `nanoid: ^3.3.18` — clears GHSA-28wg-ghj8-5hjv and GHSA-2v37-7h3g-55p8 (infinite loop on zero/negative size). Pulled in by `postcss`, which constrains it to `^3`, so **stay in the 3.x line** — overriding to 5.x/6.x would break postcss.
+
+`vite` itself is pinned to `^7.3.6` (not 7.3.2) to clear GHSA-fx2h-pf6j-xcff and GHSA-v6wh-96g9-6wx3. Deliberately staying in-major: there is no test framework here today, but a future `vitest` would peer-pin the Vite major, and vite 8 also risks the custom `vite-logseq-safe-plugin.ts`.
+
+`npm audit` should report 0 vulnerabilities. When it doesn't, verify each proposed target version actually exists (`npm view <pkg> versions --json | tail`) before writing an override. If a future `@logseq/libs` upgrade requires older majors, drop or relax the relevant override.

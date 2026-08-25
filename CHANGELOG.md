@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Security
+
+- **`npm audit` back to 0 vulnerabilities** (was 6: 1 low, 2 moderate, 3 high). Bumped the `dompurify` override to `^3.4.14` (a large XSS/sanitizer-bypass cluster affecting `<=3.4.12`, which `npm audit` misreports as "No fix available"), moved `vite` to `^7.3.6`, and added build-time overrides for `esbuild`, `postcss`, and `nanoid`. Build output is byte-identical, so no runtime behaviour changed.
+
 ## [0.4.0] - 2026-08-24
 
 Interaction fixes plus live editing. Drag-to-resize and the lightbox controls work again for marketplace installs, and editing a diagram's source now updates the render without a reload.
