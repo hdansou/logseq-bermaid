@@ -16,3 +16,4 @@ coverage/
 *.local.*
 tmp/
 scratch/
+.claude/

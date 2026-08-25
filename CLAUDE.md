@@ -60,25 +60,27 @@ These skills are available and relevant to this project:
 
 ### Plugin Entry Point
 
-`src/index.ts` is the entire plugin logic (~830 lines). It registers with the Logseq SDK via `logseq.ready(main)` and sets up:
+`src/index.ts` is the entire plugin logic (~740 lines). It registers with the Logseq SDK via `logseq.ready(main)` and sets up:
 
 - **Settings schema** — `theme` (enum, 14 named themes + "auto") and `transparentBg` (boolean)
 - **CSS injection** via `logseq.provideStyle()` from `src/styles.ts`
-- **Slash command** `/bermaid` — inserts macro + child block with starter template
+- **Slash command** `/bermaid` — inserts macro + an empty ```` ```mermaid ```` child block
 - **`onMacroRendererSlotted` hook** — core rendering hook (see Data Flow below)
 - **`onThemeModeChanged` hook** — updates `currentThemeMode` and re-renders all tracked diagrams with the new theme
-- **Host-scope DOM events** — `mousemove`, `mousedown`, `mouseup`, `scroll`, `contextmenu` for resize, context menu, lightbox zoom, and lightbox pan
+- **`DB.onChanged` subscription** — live re-render when a tracked macro or its source child is edited; debounced per macro (~350 ms) via `scheduleRerender()` → `rerenderTrackedDiagram()`. Holds the last good render rather than flashing an error on transient invalid syntax mid-typing
+- **Host-scope DOM events** — `mousemove`, `mousedown`, `mouseup`, `scroll`, `contextmenu` for resize, context menu, lightbox zoom, and lightbox pan. Bound to every distinct document (host scope + plugin document, de-duplicated)
 
 ### Data Flow for Diagram Rendering
 
 ````txt
 {{renderer :bermaid}} detected by onMacroRendererSlotted
   → fetch block + children (Editor.getBlock)
-  → extract Mermaid syntax from child blocks (join with newlines, strip ```mermaid fences)
+  → extractMermaidSyntax(children) — join with newlines, strip ```mermaid fences
+    (shared with the live re-render path, so a bug here hits both)
   → renderMermaid() from beautiful-mermaid → SVG string
   → cache SVG in svgCache (CappedMap<uuid, string>)
   → track slot in renderedSlots for theme-change re-rendering
-  → getBlockWidth() from widthCache or block property "bermaid-width"
+  → parseWidthArg(payload.arguments) → width from the macro's 2nd positional arg
   → provideUI() via buildDiagramHtml() → SVG container + resize handles + copy button + lightbox trigger
 ````
 
@@ -96,19 +98,21 @@ These skills are available and relevant to this project:
 
 - Drag left/right handles → `resizeState` tracks origin and side
 - `mousemove` updates wrapper `width` style; left-side drag also adjusts `marginLeft`
-- `mouseup` calls `setBlockWidth()` → writes to `widthCache` and persists via `upsertBlockProperty("bermaid-width", ...)` for DB graphs
+- `mouseup` calls `writeWidthToMacro()` → rewrites the parent block's macro line to `{{renderer :bermaid, NNN}}` via `Editor.updateBlock`, after `exitEditingMode(true)`
+- Width is read back by `parseWidthArg()` from the macro's second positional arg — clamped, falling back to `DEFAULT_DIAGRAM_WIDTH` (250px) when absent or non-numeric
+- Works in both file-based and DB graphs; there is no block-property or cache involved in width persistence
 - Min: 200px, Max: parent width or 1200px
 
 ### Caching
 
-| Cache                          | Type                        | Key        | Cap       | Purpose                                   |
-| ------------------------------ | --------------------------- | ---------- | --------- | ----------------------------------------- |
-| `svgCache`                     | `CappedMap<string, string>` | block UUID | 200       | Avoid re-render for copy-to-PNG           |
-| `widthCache`                   | `CappedMap<string, number>` | block UUID | 500       | Avoid async DB lookups during resize      |
-| `renderedSlots`                | `Map<string, RenderedSlot>` | block UUID | unbounded | Track slots for theme-change re-rendering |
-| Block property `bermaid-width` | DB graph only               | —          | —         | Persist width across sessions             |
+| Cache           | Type                              | Key        | Cap                       | Purpose                                                |
+| --------------- | --------------------------------- | ---------- | ------------------------- | ------------------------------------------------------ |
+| `svgCache`      | `CappedMap<string, string>`       | block UUID | 200 (`SVG_CACHE_CAP`)     | Avoid re-render for copy-to-PNG                        |
+| `renderedSlots` | `CappedMap<string, RenderedSlot>` | block UUID | 200 (`RENDERED_SLOTS_CAP`) | Track slots for theme-change re-rendering and live edit |
 
-`CappedMap` extends `Map` with oldest-entry eviction when the cap is exceeded.
+`CappedMap` extends `Map` with oldest-entry eviction when the cap is exceeded. Caps live in `src/constants.ts`.
+
+Width is **not** cached — it is read from the macro arg on every render (see Resize Mechanism above).
 
 ### Theme Resolution
 
@@ -135,7 +139,7 @@ All theme names are defined in `src/constants.ts`.
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/index.ts`               | Plugin entry — settings, hooks, event handlers, lightbox, resize, slash command                                                      |
 | `src/render.ts`              | Mermaid render pipeline — lazy-loads `beautiful-mermaid`, builds options, trims SVG, copy-to-PNG                                     |
-| `src/cache.ts`               | `CappedMap` LRU + the three cache instances (`svgCache`, `widthCache`, `renderedSlots`) and `RenderedSlot` type                      |
+| `src/cache.ts`               | `CappedMap` LRU + the two cache instances (`svgCache`, `renderedSlots`) and the `RenderedSlot` type                                  |
 | `src/constants.ts`           | Theme choices, auto-theme mapping, default width (250px)                                                                             |
 | `src/styles.ts`              | CSS injected into Logseq; includes lightbox, zoom controls, resize handles                                                           |
 | `src/utils/svg.ts`           | SVG to PNG Blob conversion                                                                                                           |
@@ -169,7 +173,8 @@ Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packag
 - **Renderer slot fires before child exists** — `onMacroRendererSlotted` can trigger before a child block inserted by the slash command is committed. The renderer retries child lookup for up to 1.5s.
 - **`provideUI` template is a string** — no JSX; HTML must be a template literal. Use `data-on-click` attributes for event handlers registered via `provideModel()`.
 - **Renderer slot `display: inline-flex`** — SVGs and large content need `width: 100%` CSS override to fill the slot.
-- **DB property values may be strings** — `getBlock().properties` in DB graphs can return property values as strings even when written as numbers (e.g. `bermaid-width`). Always coerce with `Number()` and validate with `Number.isFinite()` before use.
+- **Macro args are always strings** — `payload.arguments` hands back strings even for numeric args. Always coerce with `Number()` and validate with `Number.isFinite()` before use; see `parseWidthArg()`.
+- **Host-doc access silently no-ops in sandboxed installs** — marketplace installs load the plugin in a cross-origin iframe, so `logseq.Experiments.ensureHostScope()` throws a `SecurityError` and `window.top.document` is unreachable. Any `if (hostDoc) { ... }` block then becomes a silent no-op, taking every host-scope listener with it — this broke drag-to-resize, lightbox pan, wheel-zoom, and Esc-to-close from v0.2.x through v0.3.0 without a single error surfacing. The manifest sets `"mode": "shadow"` to load in the host JS context instead. Sideloaded plugins are unaffected, so **this class of bug is invisible in local dev** — verify interaction features against a real marketplace install.
 
 ### Dependency Overrides
 

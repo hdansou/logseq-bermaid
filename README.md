@@ -9,12 +9,13 @@ Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [bea
 ## Features
 
 - Render diagrams from `{{renderer :bermaid}}` using child block content
-- `/bermaid` slash command to insert a starter diagram
+- `/bermaid` slash command to insert an empty diagram block, ready for your Mermaid syntax
 - **Lightbox** — click any diagram to open a full-screen overlay with zoom and pan
 - **Zoom & pan** — scroll to zoom (12.5 %–800 %), click-drag to pan, zoom controls pill at the bottom
 - Copy rendered diagrams as PNG via hover button
 - Drag to resize diagrams from left or right edge
-- Persist custom width per block in DB graphs
+- **Live re-render** — edit a diagram's source and the render updates in place, no reload
+- Custom width persists in the macro itself (`{{renderer :bermaid, 500}}`), so it survives in both file-based and DB graphs
 - Theme support with `auto` mode that follows Logseq light/dark mode
 - Optional transparent background setting
 
@@ -69,7 +70,8 @@ graph TD
 - **Zoom**: scroll the mouse wheel inside the lightbox to zoom toward the cursor; use the `−` / `+` / `⊙` control pill at the bottom
 - **Pan**: click-drag inside the lightbox to pan the diagram
 - **Copy as PNG**: hover and click the copy button
-- **Resize**: drag the left or right resize handle on diagram edges
+- **Resize**: drag the left or right resize handle on diagram edges; the width is written back into the macro as `{{renderer :bermaid, NNN}}`
+- **Edit**: change the Mermaid source in the child block and the diagram re-renders in place
 
 ## Settings
 
