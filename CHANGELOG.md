@@ -6,17 +6,28 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-24
+
+Interaction fixes plus live editing. Drag-to-resize and the lightbox controls work again for marketplace installs, and editing a diagram's source now updates the render without a reload.
+
 ### Added
 
-- **Live re-render on edit.** Editing a diagram's mermaid source now updates the rendered SVG in place — no page reload required. The plugin subscribes to `logseq.DB.onChanged` and re-renders the affected tracked diagram, debounced per macro (~350 ms) so typing stays smooth. Previously a diagram only re-rendered when its macro re-fired (initial load, reload, or width write).
+- **Live re-render on edit.** Editing a diagram's mermaid source now updates the rendered SVG in place — no page reload required. The plugin subscribes to `logseq.DB.onChanged` and re-renders the affected tracked diagram, debounced per macro (~350 ms) so typing stays smooth. Previously a diagram only re-rendered when its macro re-fired (initial load, reload, or width write). Thanks to [@Xanaxus](https://github.com/Xanaxus) ([#1](https://github.com/hdansou/logseq-bermaid/pull/1)).
 
 ### Fixed
 
-- **Resize handles now actually resize the diagram.** The drag listeners were bound only to the host-scope document; when the rendered diagram lived in a different document the `mousedown` on a resize handle never reached the handler, so dragging did nothing. Listeners are now bound to every distinct document involved (host scope + plugin document, de-duplicated).
+- **Drag-to-resize, lightbox pan/wheel-zoom, and Esc-to-close were silently broken for marketplace installs.** v0.2.x–v0.3.0 attached mouse/keyboard listeners to the host document via `logseq.Experiments.ensureHostScope()`. In marketplace installs the plugin loads in a sandboxed iframe (cross-origin with the host), so `window.top.document` access throws a `SecurityError`; the `if (hostDoc)` branch silently became a no-op and none of those listeners attached. The macro-argument width path (`{{renderer :bermaid, 500}}`) kept working because it doesn't depend on host-doc events, which is why the bug was easy to miss. Fixed by setting `"mode": "shadow"` in the manifest so the plugin loads in a Shadow DOM container in the host JS context, restoring host-doc access.
+- Unpacked sideload installs were unaffected because Logseq already loads sideloaded plugins without the iframe sandbox.
+- **Resize listeners are now bound to every distinct document involved** (host scope + plugin document, de-duplicated), and lightbox element lookups resolve across those documents. Defence in depth alongside the shadow-mode fix above. Thanks to [@Xanaxus](https://github.com/Xanaxus) ([#1](https://github.com/hdansou/logseq-bermaid/pull/1)).
 
 ### Changed
 
-- **`/bermaid` inserts an empty mermaid code block** instead of a pre-filled `graph TD` example, so you start from a blank diagram and type your own.
+- **`/bermaid` inserts an empty mermaid code block** instead of a pre-filled `graph TD` example, so you start from a blank diagram and type your own. Note that a freshly inserted diagram shows the "Child block is empty" hint until you type Mermaid syntax into it. Thanks to [@Xanaxus](https://github.com/Xanaxus) ([#1](https://github.com/hdansou/logseq-bermaid/pull/1)).
+
+### Notes
+
+- Shadow mode is labelled "still draft" in Logseq's plugin authoring guide (`logseq/libs/guides/AGENTS.md`), and depends on `window.QSandbox` being present at runtime. If a future Logseq build drops shadow mode or QSandbox, drag will break again the same way. Worth tracking.
+- The web-dev workflow at `http://localhost:8080` is not expected to support drag-to-resize, lightbox pan, wheel-zoom, or Esc-to-close — those features need the plugin to be loaded as an unpacked sideload (or installed from the marketplace) in Logseq Desktop.
 
 ## [0.3.0] - 2026-05-02
 

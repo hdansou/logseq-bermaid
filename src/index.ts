@@ -434,7 +434,7 @@ async function main() {
         const side = target.dataset.side as 'left' | 'right'
         const wrapper = target.closest('.bermaid-wrapper') as HTMLElement
         const uuid = wrapper?.dataset?.blockUuid
-        
+
         if (uuid && wrapper) {
           resizeState = {
             uuid,
