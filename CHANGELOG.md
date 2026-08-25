@@ -6,6 +6,18 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Added
+
+- **Live re-render on edit.** Editing a diagram's mermaid source now updates the rendered SVG in place — no page reload required. The plugin subscribes to `logseq.DB.onChanged` and re-renders the affected tracked diagram, debounced per macro (~350 ms) so typing stays smooth. Previously a diagram only re-rendered when its macro re-fired (initial load, reload, or width write).
+
+### Fixed
+
+- **Resize handles now actually resize the diagram.** The drag listeners were bound only to the host-scope document; when the rendered diagram lived in a different document the `mousedown` on a resize handle never reached the handler, so dragging did nothing. Listeners are now bound to every distinct document involved (host scope + plugin document, de-duplicated).
+
+### Changed
+
+- **`/bermaid` inserts an empty mermaid code block** instead of a pre-filled `graph TD` example, so you start from a blank diagram and type your own.
+
 ## [0.3.0] - 2026-05-02
 
 Width persistence moves from a DB block property into the macro itself: `{{renderer :bermaid, NNN}}`. Self-contained, graph-agnostic, fixes a long-standing duplicate-property bug.

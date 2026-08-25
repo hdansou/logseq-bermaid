@@ -175,6 +175,71 @@ function hideFullscreen(): void {
   })
 }
 
+/**
+ * Join child-block text into Mermaid syntax and strip a wrapping ```mermaid ... ``` fence.
+ * Children may be BlockEntity or ['uuid', BlockUUID] tuples; only the entity form has text.
+ */
+function extractMermaidSyntax(children: Array<BlockEntity | BlockUUIDTuple>): string {
+  const mermaidLines: string[] = []
+  for (const child of children) {
+    if (Array.isArray(child)) continue
+    const text = getBlockText(child)
+    if (text) mermaidLines.push(text)
+  }
+
+  let mermaidSyntax = mermaidLines.join('\n').trim()
+
+  // Strip code fence if wrapped in ```mermaid ... ```
+  // Line-based parser handles unusual whitespace better than a single regex.
+  const lines = mermaidSyntax.split('\n')
+  if (lines.length >= 2) {
+    const first = lines[0].trimEnd()
+    const last = lines[lines.length - 1].trimEnd()
+    if (/^```(?:mermaid)?\s*$/.test(first) && /^```\s*$/.test(last)) {
+      mermaidSyntax = lines.slice(1, -1).join('\n').trim()
+    }
+  }
+  return mermaidSyntax
+}
+
+/**
+ * Re-render an already-tracked diagram from its current child-block source.
+ * Used by the block-change subscription so edits appear live without a reload.
+ * Silently no-ops if the macro is no longer tracked or the source is empty
+ * (we keep the last good render rather than flashing an error mid-edit).
+ */
+async function rerenderTrackedDiagram(macroUuid: string): Promise<void> {
+  const tracked = renderedSlots.get(macroUuid)
+  if (!tracked) return
+  try {
+    const block = await logseq.Editor.getBlock(macroUuid, { includeChildren: true }).catch(() => null)
+    const children: Array<BlockEntity | BlockUUIDTuple> = block?.children || []
+    const mermaidSyntax = extractMermaidSyntax(children)
+    if (!mermaidSyntax || mermaidSyntax === tracked.mermaidSyntax) return
+    const svg = await renderDiagram(mermaidSyntax, getRenderConfig())
+    svgCache.set(macroUuid, svg)
+    renderedSlots.set(macroUuid, { slot: tracked.slot, mermaidSyntax, width: tracked.width })
+    renderSlot(macroUuid, tracked.slot, buildDiagramHtml(macroUuid, svg, tracked.width))
+  } catch (err) {
+    console.warn('Bermaid: live re-render failed', macroUuid, err)
+  }
+}
+
+// Per-macro debounce timers for live re-rendering on source edits.
+const rerenderTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function scheduleRerender(macroUuid: string): void {
+  const existing = rerenderTimers.get(macroUuid)
+  if (existing) clearTimeout(existing)
+  rerenderTimers.set(
+    macroUuid,
+    setTimeout(() => {
+      rerenderTimers.delete(macroUuid)
+      void rerenderTrackedDiagram(macroUuid)
+    }, 350),
+  )
+}
+
 function buildDiagramHtml(blockUuid: string, svg: string, width: number): string {
   return `
     <div class="bermaid-wrapper" data-block-uuid="${blockUuid}" style="width: ${width}px;">
@@ -306,8 +371,24 @@ async function main() {
     console.warn('Bermaid: Could not access host document', err)
   }
 
-  if (hostDoc) {
-    const doc = hostDoc
+  // Bind the resize/lightbox listeners to every distinct document involved.
+  // The rendered diagram (and its resize handles) may live in a different
+  // document than the host scope; binding to both ensures the mousedown that
+  // carries `.bermaid-resize-handle` actually reaches our handler.
+  const targetDocs: Document[] = []
+  for (const d of [hostDoc, typeof document !== 'undefined' ? document : null]) {
+    if (d && !targetDocs.includes(d)) targetDocs.push(d)
+  }
+
+  if (targetDocs.length) {
+    // Primary document for querying lightbox elements; fall back across all docs.
+    const queryEl = <T extends Element>(sel: string): T | null => {
+      for (const d of targetDocs) {
+        const el = d.querySelector(sel) as T | null
+        if (el) return el
+      }
+      return null
+    }
 
     const onMouseMove = (e: MouseEvent) => {
       // Handle resize dragging
@@ -374,7 +455,7 @@ async function main() {
           startPanX: lightboxPanX,
           startPanY: lightboxPanY,
         }
-        const contentEl = doc.querySelector('.bermaid-lightbox-content') as HTMLElement | null
+        const contentEl = queryEl<HTMLElement>('.bermaid-lightbox-content')
         if (contentEl) contentEl.classList.add('bermaid-panning')
         e.preventDefault()
       }
@@ -397,7 +478,7 @@ async function main() {
       }
       if (lightboxDragState) {
         lightboxDragState = null
-        const contentEl = doc.querySelector('.bermaid-lightbox-content') as HTMLElement | null
+        const contentEl = queryEl<HTMLElement>('.bermaid-lightbox-content')
         if (contentEl) contentEl.classList.remove('bermaid-panning')
       }
     }
@@ -411,7 +492,7 @@ async function main() {
       const zoomFactor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP
       const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, lightboxZoom * zoomFactor))
       // Zoom toward cursor position relative to content center
-      const contentEl = doc.querySelector('.bermaid-lightbox-content') as HTMLElement | null
+      const contentEl = queryEl<HTMLElement>('.bermaid-lightbox-content')
       if (contentEl) {
         const rect = contentEl.getBoundingClientRect()
         const cx = rect.left + rect.width / 2
@@ -429,19 +510,21 @@ async function main() {
       }
     }
 
-    doc.addEventListener('mousemove', onMouseMove, true)
-    doc.addEventListener('mousedown', onMouseDown, true)
-    doc.addEventListener('mouseup', onMouseUp, true)
-    doc.addEventListener('wheel', onWheel, { capture: true, passive: false })
-    doc.addEventListener('keydown', onKeyDown, true)
+    for (const d of targetDocs) {
+      d.addEventListener('mousemove', onMouseMove, true)
+      d.addEventListener('mousedown', onMouseDown, true)
+      d.addEventListener('mouseup', onMouseUp, true)
+      d.addEventListener('wheel', onWheel, { capture: true, passive: false })
+      d.addEventListener('keydown', onKeyDown, true)
 
-    offHooks.push(() => {
-      doc.removeEventListener('mousemove', onMouseMove, true)
-      doc.removeEventListener('mousedown', onMouseDown, true)
-      doc.removeEventListener('mouseup', onMouseUp, true)
-      doc.removeEventListener('wheel', onWheel, true)
-      doc.removeEventListener('keydown', onKeyDown, true)
-    })
+      offHooks.push(() => {
+        d.removeEventListener('mousemove', onMouseMove, true)
+        d.removeEventListener('mousedown', onMouseDown, true)
+        d.removeEventListener('mouseup', onMouseUp, true)
+        d.removeEventListener('wheel', onWheel, true)
+        d.removeEventListener('keydown', onKeyDown, true)
+      })
+    }
   }
 
   // --- Theme mode detection ---
@@ -460,6 +543,34 @@ async function main() {
   })
   if (typeof offThemeModeChanged === 'function') {
     offHooks.push(offThemeModeChanged)
+  }
+
+  // --- Live re-render on source edits ---
+  // Without this, editing a diagram's child block does nothing until the
+  // macro re-fires (page reload). Watch block changes and re-render the
+  // affected tracked diagram (debounced per macro so typing stays smooth).
+  const offDbChanged = logseq.DB.onChanged(({ blocks }) => {
+    if (!renderedSlots.size || !Array.isArray(blocks) || blocks.length === 0) return
+    for (const block of blocks) {
+      const uuid = block?.uuid
+      if (uuid && renderedSlots.has(uuid)) {
+        // The macro block itself changed.
+        scheduleRerender(uuid)
+        continue
+      }
+      // Otherwise the edited block may be a source child of a tracked macro.
+      const parentId = (block?.parent as { id?: number } | undefined)?.id
+      if (parentId === undefined) continue
+      void logseq.Editor.getBlock(parentId)
+        .then((parent) => {
+          const parentUuid = parent?.uuid
+          if (parentUuid && renderedSlots.has(parentUuid)) scheduleRerender(parentUuid)
+        })
+        .catch(() => null)
+    }
+  })
+  if (typeof offDbChanged === 'function') {
+    offHooks.push(offDbChanged)
   }
 
   logseq.beforeunload(async () => {
@@ -513,26 +624,7 @@ async function main() {
         return
       }
 
-      const mermaidLines: string[] = []
-      for (const child of children) {
-        // Children may be BlockEntity or ['uuid', BlockUUID] tuples; only the entity form has text.
-        if (Array.isArray(child)) continue
-        const text = getBlockText(child)
-        if (text) mermaidLines.push(text)
-      }
-
-      let mermaidSyntax = mermaidLines.join('\n').trim()
-
-      // Strip code fence if wrapped in ```mermaid ... ```
-      // Line-based parser handles unusual whitespace better than a single regex.
-      const lines = mermaidSyntax.split('\n')
-      if (lines.length >= 2) {
-        const first = lines[0].trimEnd()
-        const last = lines[lines.length - 1].trimEnd()
-        if (/^```(?:mermaid)?\s*$/.test(first) && /^```\s*$/.test(last)) {
-          mermaidSyntax = lines.slice(1, -1).join('\n').trim()
-        }
-      }
+      const mermaidSyntax = extractMermaidSyntax(children)
       if (!mermaidSyntax) {
         renderSlot(blockUuid, slot, `<div class="bermaid-error">Child block is empty — add Mermaid syntax (e.g. "graph TD; A-->B").</div>`)
         return
@@ -600,7 +692,7 @@ async function main() {
         return
       }
 
-      const childTemplate = '```mermaid\ngraph TD\n    A[Start] --> B{Decision}\n    B -->|Yes| C[Action]\n    B -->|No| D[End]\n```'
+      const childTemplate = '```mermaid\n\n```'
 
       // Wait for the parent block update to be committed to the DB before inserting a child.
       // In DB-based graphs, the entity may not be persisted immediately,
