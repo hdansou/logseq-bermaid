@@ -6,6 +6,18 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-31
+
+**Hotfix. v0.4.0 does not load — upgrade immediately.**
+
+### Fixed
+
+- **The plugin failed to load entirely in v0.4.0.** v0.4.0 set `"mode": "shadow"` in the manifest to work around host-document access being unavailable in sandboxed installs. That manifest field commits Logseq to `LSPluginLocal._setupShadowSandbox()` → `LSPluginShadow.load()`, which begins with `const { importHTML, createSandboxContainer } = window.QSandbox || {}`. No shipped Logseq build actually defines `window.QSandbox` — `qiankun` is not bundled and nothing else provides it — so `importHTML` is `undefined` and `load()` throws `TypeError: gs is not a function` before the plugin registers anything. The `this.shadow ? _setupShadowSandbox() : _setupIframeSandbox()` branch has no fallback, so there is no recovery. This affected **every install type**, sideload included, not just marketplace. Reverted by removing the field.
+
+### Known issues
+
+- **Drag-to-resize, lightbox pan, wheel-zoom, and Esc-to-close remain broken in sandboxed (marketplace) installs.** This is the original v0.2.x bug that `"mode": "shadow"` was meant to solve. Reverting restores v0.3.0 behaviour: the plugin works and renders, but those host-document-dependent interactions do not fire. Copy-as-PNG, theming, live re-render, and macro-arg width are unaffected. A real fix needs an approach that does not depend on reaching the host document.
+
 ### Security
 
 - **`npm audit` back to 0 vulnerabilities** (was 6: 1 low, 2 moderate, 3 high). Bumped the `dompurify` override to `^3.4.14` (a large XSS/sanitizer-bypass cluster affecting `<=3.4.12`, which `npm audit` misreports as "No fix available"), moved `vite` to `^7.3.6`, and added build-time overrides for `esbuild`, `postcss`, and `nanoid`. Build output is byte-identical, so no runtime behaviour changed.

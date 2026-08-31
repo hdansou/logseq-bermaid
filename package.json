@@ -9,7 +9,7 @@
     "visualization"
   ],
   "homepage": "https://github.com/hdansou/logseq-bermaid#readme",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": "Danzu",
   "license": "MIT",
   "scripts": {
@@ -48,7 +48,6 @@
     "description": "Beautiful mermaid diagram renderer for Logseq using beautiful-mermaid",
     "icon": "./icon.svg",
     "main": "dist/index.html",
-    "mode": "shadow",
     "theme": false,
     "web": true,
     "supportsDB": true,
