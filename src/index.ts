@@ -259,6 +259,26 @@ function buildDiagramHtml(blockUuid: string, svg: string, width: number): string
         </svg>
       </button>
       <div class="bermaid-resize-handle bermaid-resize-right" data-side="right"></div>
+      <!--
+        Width slider. The edge handles above only work when the plugin is
+        same-origin with the host (sideloads, served from lsp://logseq.com).
+        Installed plugins are served from lsp://logseq.io, so window.top.document
+        throws and no drag listener can ever attach. The plugin bridge forwards
+        only click/focus/blur/dblclick/key*/change/input/contextmenu -- no mouse
+        events -- so a native control the browser drags for us is the only path
+        that works in an installed plugin. value arrives as a string.
+
+        Commit on change (fires on release), never on input: provideUI replaces
+        the whole slot template, which would destroy this very input mid-gesture
+        and abort the drag. The browser renders thumb movement during the drag;
+        the diagram snaps to the new width on release.
+      -->
+      <input type="range" class="bermaid-width-slider"
+             min="${MIN_DIAGRAM_WIDTH}" max="${MAX_DIAGRAM_WIDTH}" value="${width}"
+             style="left: ${MIN_DIAGRAM_WIDTH}px; width: ${MAX_DIAGRAM_WIDTH - MIN_DIAGRAM_WIDTH}px;"
+             data-on-change="bermaidWidthCommit"
+             data-block-uuid="${blockUuid}"
+             title="Drag to resize (${width}px)">
     </div>
   `
 }
@@ -319,6 +339,24 @@ async function main() {
       const uuid = e.dataset?.blockUuid
       if (!uuid) return
       showFullscreen(uuid)
+    },
+    async bermaidWidthCommit(e: any) {
+      const uuid = e?.dataset?.blockUuid
+      if (!uuid) return
+      // The bridge forwards `value` as a string, same as macro args.
+      const width = Number(String(e?.value ?? '').trim())
+      if (!Number.isFinite(width)) return
+      const clamped = Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, width))
+
+      const tracked = renderedSlots.get(uuid)
+      const svg = svgCache.get(uuid)
+      if (tracked && svg) {
+        renderedSlots.set(uuid, { ...tracked, width: clamped })
+        renderSlot(uuid, tracked.slot, buildDiagramHtml(uuid, svg, clamped))
+      }
+      // Persist into the macro arg. Also re-fires the renderer, which is
+      // harmless — it lands on the same width we just rendered.
+      await writeWidthToMacro(uuid, clamped)
     },
     async bermaidCloseFullscreen(e: any) {
       e?.stopPropagation?.()
@@ -576,6 +614,12 @@ async function main() {
   logseq.beforeunload(async () => {
     hideFullscreen()
     resizeState = null
+    // Pending debounce timers outlive the hooks below; without this they fire
+    // against a torn-down plugin and call provideUI on a dead slot.
+    for (const timer of rerenderTimers.values()) {
+      clearTimeout(timer)
+    }
+    rerenderTimers.clear()
     for (const off of offHooks) {
       off()
     }

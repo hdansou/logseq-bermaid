@@ -6,6 +6,24 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-31
+
+Resizing works again for marketplace installs, and it now scales proportionally.
+
+### Added
+
+- **Width slider.** Hover a diagram and a slider appears along its bottom edge; drag it to resize. This is the resize path that works in **installed** plugins, where the edge handles cannot function (see below). Commits on release and persists into the macro arg exactly as before, so `{{renderer :bermaid, 666}}` is still the source of truth.
+
+### Fixed
+
+- **Resizing now scales height as well as width.** `.bermaid-container` is a flex container, and flex's default `align-items: stretch` was stretching the SVG to the container's cross-size, overriding the aspect ratio implied by its `viewBox`. Width changed, height did not follow. Setting `align-items: flex-start` lets `height: auto` preserve proportions.
+- **Pending re-render timers are now cleared on unload.** `beforeunload` drained the hook list but left the live-re-render debounce timers running; they would fire against a torn-down plugin and call `provideUI` on a dead slot.
+
+### Known issues
+
+- **Drag-to-resize via the edge handles only works in sideloaded plugins**, not installed ones. Installed plugins are served from `lsp://logseq.io/plugins/` while the host app runs at `lsp://logseq.com/`, so `window.top.document` throws a cross-origin `SecurityError` and no drag listener can attach. The plugin bridge forwards only `click`, `focus`, `focusin`, `focusout`, `blur`, `dblclick`, `keyup`, `keypress`, `keydown`, `change`, `input`, and `contextmenu` — **no mouse or wheel events** — so a drag gesture cannot be reconstructed. The slider exists precisely because it is a control the browser drags natively, reporting through `change`, which does cross the bridge. The edge handles are retained since they still work same-origin.
+- Lightbox pan, wheel-zoom, and Esc-to-close remain unavailable in installed plugins for the same reason. Esc specifically cannot be recovered even via `data-on-keydown`: the forwarded payload carries `type`, `value`, `id`, `className`, and `dataset`, but no key identity, so Esc is indistinguishable from any other key. Lightbox open/close and the zoom buttons work, because they are clicks.
+
 ## [0.4.1] - 2026-08-31
 
 **Hotfix. v0.4.0 does not load — upgrade immediately.**

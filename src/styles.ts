@@ -15,6 +15,10 @@ export const BERMAID_STYLES = `
   }
   .bermaid-container {
     display: flex;
+    /* Without this, align-items defaults to stretch and the SVG is stretched
+       to the container's cross-size instead of following its own aspect ratio --
+       width would resize but height would not track it. */
+    align-items: flex-start;
     width: 100%;
     overflow-x: auto;
     padding: 0;
@@ -22,6 +26,7 @@ export const BERMAID_STYLES = `
   }
   .bermaid-container svg {
     width: 100%;
+    /* height:auto + the viewBox's intrinsic ratio keeps resizing proportional. */
     height: auto;
     display: block;
   }
@@ -62,6 +67,61 @@ export const BERMAID_STYLES = `
   .bermaid-copy-btn svg {
     display: block;
     pointer-events: none;
+  }
+  /* Width slider — the resize path that works in installed (cross-origin)
+     plugins, where the edge handles' drag listeners can never attach.
+     Hidden until hover so it stays out of the way. */
+  /* The thumb IS the right edge handle.
+
+     The track spans MIN..MAX diagram width in real pixels (left/width are set
+     inline), so the thumb lands at x == the diagram's current right edge and
+     dragging it horizontally reads as dragging the edge itself.
+
+     The track therefore extends past the diagram whenever width < MAX, so it
+     must not intercept clicks on whatever sits to the right: pointer-events is
+     none on the input and re-enabled only on the thumb. */
+  .bermaid-width-slider {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: none;
+    z-index: 6;
+  }
+  .bermaid-width-slider::-webkit-slider-runnable-track {
+    background: transparent;
+    border: none;
+    height: 100%;
+  }
+  .bermaid-width-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: auto;
+    width: 6px;
+    height: 56px;
+    border-radius: 3px;
+    background: var(--ls-active-primary-color, #7c3aed);
+    cursor: col-resize;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .bermaid-wrapper:hover .bermaid-width-slider::-webkit-slider-thumb {
+    opacity: 0.55;
+  }
+  .bermaid-width-slider::-webkit-slider-thumb:hover,
+  .bermaid-width-slider:focus::-webkit-slider-thumb {
+    opacity: 1;
+  }
+  /* The static right handle is replaced by the thumb above; keeping both would
+     render two bars at the same edge. The left handle still works same-origin. */
+  .bermaid-resize-right {
+    display: none;
   }
   .bermaid-resize-handle {
     position: absolute;
