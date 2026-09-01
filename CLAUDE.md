@@ -177,6 +177,52 @@ Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packag
 - **Host-doc access silently no-ops in sandboxed installs** — marketplace installs load the plugin in a cross-origin iframe, so `logseq.Experiments.ensureHostScope()` throws a `SecurityError` and `window.top.document` is unreachable. Any `if (hostDoc) { ... }` block then becomes a silent no-op, taking every host-scope listener with it — this broke drag-to-resize, lightbox pan, wheel-zoom, and Esc-to-close from v0.2.x onward without a single error surfacing. **Still unfixed.** See the shadow-mode entry below for the approach that does *not* work.
 - **Do NOT set `"mode": "shadow"` in the manifest** — it looks like the fix for the host-doc problem above, and it is not. v0.4.0 shipped it and the plugin failed to load entirely, on *every* install type (sideload included), with `TypeError: gs is not a function`. Logseq's shadow path (`LSPluginLocal._setupShadowSandbox` → `LSPluginShadow.load`) destructures `const {importHTML, createSandboxContainer} = window.QSandbox || {}`, but no shipped Logseq build defines `window.QSandbox` — `qiankun` is not bundled and no script tag provides it. The `|| {}` makes it degrade to `undefined` functions rather than a clear error, and `this.shadow ? _setupShadowSandbox() : _setupIframeSandbox()` is a hard branch with **no fallback**, so choosing shadow means the plugin never registers. Reverted in v0.4.1. To check any future build: `strings app.asar | grep -c QSandbox` — you need an *assignment*, not just the two consumer destructures.
 
+### Plugin Origin Split — read this before touching any interaction code
+
+Logseq serves plugins from two different origins, and the host app from a third URL on one of them:
+
+| Load type | Entry URL | Same-origin with host? |
+| --------- | --------- | ---------------------- |
+| Host app | `lsp://logseq.com/` | — |
+| Sideloaded ("load unpacked", `externals` in `preferences.json`) | `lsp://logseq.com/external/…` | **Yes** — `window.top.document` reachable |
+| Installed (marketplace, `~/.logseq/plugins/<id>/`) | `lsp://logseq.io/plugins/…` | **No** — throws `SecurityError` |
+
+Consequences:
+
+- **Anything depending on the host DOM works when sideloaded and silently dies when installed.** This is the single most important fact about this plugin. `logseq.Experiments.ensureHostScope()` does not throw — it catches internally, logs, and returns `window.top` anyway; the `SecurityError` only surfaces when you touch `.document`.
+- **Sideloading cannot validate an interaction fix.** Test from `~/.logseq/plugins/<id>/` instead — see the test loop below.
+- **Never have the same plugin id registered as both a sideload and an install.** Both load, and results become untraceable to a copy. Check `preferences.json` → `externals` for stale paths.
+
+Local cross-origin test loop (no release required; plugin reload re-reads from disk):
+
+```bash
+npm run build
+D=~/.logseq/plugins/logseq-bermaid
+rm -rf "$D/dist" && /bin/cp -R dist "$D/" && /bin/cp -f package.json "$D/"
+```
+
+Use `/bin/cp` — plain `cp` is aliased to interactive and silently skips overwrites in scripts.
+
+### Plugin Bridge Contract (`provideModel` + `data-on-*`)
+
+Cross-origin plugins can only receive DOM events that Logseq explicitly forwards over the RPC bridge. Verified empirically against a running install, not inferred:
+
+**Forwarded events** — `click`, `focus`, `focusin`, `focusout`, `blur`, `dblclick`, `keyup`, `keypress`, `keydown`, `change`, `input`, `contextmenu`.
+
+**Not forwarded** — `mousedown`, `mousemove`, `mouseup`, `wheel`, `resize`. So **drag and wheel gestures cannot be reconstructed**; only controls the browser drags natively (e.g. `<input type="range">`) work, reporting through `change`/`input`.
+
+**Payload shape** (`{type, value, id, className, dataset}`, plus `rect` only when the element carries a `data-rect` attribute):
+
+```js
+{ type: "change", value: "253", id: "", className: "...",
+  dataset: { blockUuid: "..." }, rect: { width: 926.73, ... } }
+```
+
+- `value` is always a **string** — coerce with `Number()` and validate, same as macro args.
+- `rect` is live `getBoundingClientRect()` at event time, and reflects CSS-resized geometry.
+- There is **no key identity on `keydown`** — Esc cannot be distinguished from any other key, so Esc-to-close is not recoverable this way.
+- `provideUI` replaces the **entire** slot template, so re-rendering during a drag destroys the element being dragged. Commit on `change` (release), never on `input`.
+
 ### Dependency Overrides
 
 `package.json` declares `overrides` for five transitive deps. Two come in through `@logseq/libs@0.3.2` (runtime), three through `vite` (build-time only — they never reach `dist/`).

@@ -4,6 +4,31 @@ Active work and immediate backlog. Completed work moves to `CHANGELOG.md`.
 
 ---
 
+## Resize investigation — 2026-08-31 → 09-01 (IN PROGRESS, uncommitted)
+
+**State:** `package.json` says 0.5.0, CHANGELOG has a `[0.5.0]` entry, but **nothing is committed and no tag exists**. Last tag is v0.4.1. Working tree holds the slider, the aspect-ratio fix, and the A#2 timer cleanup.
+
+**Root cause (proven, not inferred).** Installed plugins load cross-origin (`lsp://logseq.io`) from the host (`lsp://logseq.com`), so `window.top.document` throws and no drag listener can attach. The bridge forwards no mouse or wheel events, so drag cannot be reconstructed. See the "Plugin Origin Split" and "Plugin Bridge Contract" sections in CLAUDE.md — both verified against a running install via a throwaway probe plugin.
+
+**Verified working:** width slider resizes correctly from an installed (cross-origin) copy.
+
+**Unverified:** the `align-items: flex-start` proportional-height fix, and the edge-thumb variant (slider thumb styled and positioned as the right edge handle, `pointer-events` restricted to the thumb). The open question on the thumb variant is whether its invisible track swallows clicks to the right of narrow diagrams.
+
+### Next steps
+
+- [ ] Verify the edge-thumb variant from `~/.logseq/plugins/logseq-bermaid` — does it drag, does height scale, and can you still click content to the right of a narrow diagram?
+- [ ] If the thumb variant fails, fall back to the bottom slider (already verified) and ship that as 0.5.0.
+- [ ] Mirror the technique to the left handle (also needs `marginLeft` adjustment) only after the right edge is proven.
+- [ ] Decide whether to remove the now-dead host-doc drag listeners, which only function in sideloads.
+
+### Cleanup still outstanding (E from the 08-24 pass)
+
+- [ ] Delete `~/Projects/src/github.com/logseq-dev/plugin-dev/logseq-bermaid-pr1` — a stale v0.3.0 staging copy that produced **two** false "drag works now" readings. Do not delete while it is the registered external.
+- [ ] `git worktree prune`; delete branches `pr-1` and `chore/prod-readiness-top3` (both verified superseded).
+- [ ] Remove the `logseq-bermaid-probe` plugin from `~/.logseq/plugins/` when done with bridge questions.
+
+---
+
 ## Production-hardening pass — 2026-08-24
 
 Ran after merging [#1](https://github.com/hdansou/logseq-bermaid/pull/1) and releasing v0.4.0.
