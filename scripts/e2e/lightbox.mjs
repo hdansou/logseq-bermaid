@@ -73,6 +73,13 @@ try {
   await clickInFrame(".pswp__button--zoom");
   const zoomed = await state();
   check(zoomed.scale !== null && s0 !== null && zoomed.scale !== s0, `zoom button changes the rendered image width (${s0}px -> ${zoomed.scale}px)`);
+  // plain mouse wheel (no modifier) over the image must zoom
+  const beforeWheel = (await state()).scale;
+  await page.mouse.move(700, 450);
+  await page.mouse.wheel(0, -300);
+  await page.waitForTimeout(600);
+  const afterWheel = (await state()).scale;
+  check(afterWheel !== null && afterWheel > beforeWheel, `mouse wheel zooms in (${beforeWheel}px -> ${afterWheel}px)`);
   // PhotoSwipe must have finished opening, or close/Esc are silently ignored.
   const opener = await pf.eval(`(() => { const p = window.__bermaidLightbox?.pswp; return p ? { isOpen: p.opener?.isOpen, isOpening: p.opener?.isOpening } : null })()`);
   check(opener && opener.isOpen === true && opener.isOpening === false, `opener finished opening before interaction (${JSON.stringify(opener)})`);

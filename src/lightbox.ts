@@ -53,6 +53,9 @@ export function openLightbox(svg: string): void {
     // (natural size) is right for them. A diagram is vector and already
     // renders at natural size when it fits, which would leave the zoom button
     // with nothing to do. Zoom relative to the fitted size instead.
+    // Plain wheel zooms (PhotoSwipe's default wants Ctrl/Cmd held): a diagram
+    // has no gallery to scroll, and the previous viewer zoomed on wheel.
+    wheelToZoom: true,
     initialZoomLevel: 'fit',
     secondaryZoomLevel: (levels) => levels.fit * 2,
     maxZoomLevel: (levels) => levels.fit * 8,

@@ -66,7 +66,7 @@ graph TD
 ## Interactions
 
 - **Lightbox**: click the diagram to view it full-screen; press Esc, click the backdrop, or click the ✕ button to close
-- **Zoom**: click the zoom button or the diagram itself to toggle 2×; Ctrl/⌘ + mouse wheel or pinch to zoom freely, up to 8× the fitted size
+- **Zoom**: mouse wheel or pinch to zoom toward the cursor, up to 8× the fitted size; click the zoom button or the diagram itself to toggle 2×
 - **Pan**: click-drag the diagram (or scroll) when zoomed in
 - **Copy as PNG**: hover and click the copy button
 - **Resize**: drag the grip in the diagram's bottom-right corner; the width is written back into the macro as `{{renderer :bermaid, NNN}}`
