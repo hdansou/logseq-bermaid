@@ -64,17 +64,16 @@ All diagram types supported by beautiful-mermaid:
 ### FR-7: Copy as PNG
 
 - A copy button appears when hovering over a rendered diagram
-- Right-clicking the diagram shows a context menu with a "Copy as PNG" option
-- Both paths write a PNG to the system clipboard at 2× resolution
+- Clicking it writes a PNG to the system clipboard at 2× resolution
 - Respects the `transparentBg` setting
-- Uses host-scope clipboard API with fallback for Logseq's sandboxed iframe
+- Uses the plugin frame's clipboard API, falling back to the host-scope clipboard when the frame's is unavailable
 
 ### FR-8: Drag-to-Resize
 
-- Left and right resize handles are shown on diagram hover.
-- Dragging a handle changes diagram width (min 200 px, max parent width or 1200 px).
-- Dragging the left handle keeps the right edge anchored (adjusts `marginLeft`).
-- Width is persisted as the second positional argument of the macro: `{{renderer :bermaid, NNN}}`. On resize end, the parent block is updated via `Editor.updateBlock` to rewrite the macro line with the new width.
+- A resize grip appears in the diagram's bottom-right corner on hover (native CSS `resize: both`; the browser performs the drag, no pointer listeners).
+- Dragging the grip changes diagram width (min 200 px, max parent width or 1200 px); height follows the SVG's aspect ratio after release.
+- Width is persisted as the second positional argument of the macro: `{{renderer :bermaid, NNN}}`. On release, the bridge forwards the wrapper's click with its live rect (`data-rect`), and the parent block is updated via `Editor.updateBlock` to rewrite the macro line with the new width.
+- Must work in **installed** (cross-origin) plugins, where the host document is unreachable and the bridge forwards no mouse events. See CLAUDE.md "Plugin Origin Split".
 - A macro without a width arg (`{{renderer :bermaid}}`) renders at the default width (250 px).
 - Persistence is graph-agnostic — works in both file-based and DB graphs because the value lives in block content, not a property.
 - Copying the parent block (with its child mermaid block) preserves the width — the diagram is fully self-contained.
@@ -82,11 +81,11 @@ All diagram types supported by beautiful-mermaid:
 
 ### FR-9: Lightbox Zoom & Pan
 
-- Clicking a rendered diagram opens a full-screen lightbox overlay
-- The lightbox can be closed via an ✕ button, pressing Esc, or clicking the backdrop
-- Mouse-wheel scrolls zoom toward the cursor position; range: 12.5 %–800 %
-- Click-drag inside the lightbox pans the diagram
-- A zoom controls pill (bottom-centre) provides `−`, `+`, and `⊙` (reset) buttons with a live zoom label
+- Clicking a rendered diagram opens it full-screen in PhotoSwipe, the viewer Logseq uses for its own images, rendered inside the plugin's own iframe (main UI) so it works in installed plugins
+- The lightbox can be closed via the ✕ button, pressing Esc, or clicking the backdrop
+- Mouse wheel and pinch zoom toward the cursor, up to 8× the fitted size; the zoom button or a click on the image toggles 2×
+- Click-drag pans the diagram when zoomed in
+- Opens instantly (no fade) and only once the frame is displayed; see CLAUDE.md "Lightbox" for why
 
 ## Non-Functional Requirements
 
@@ -124,9 +123,10 @@ This renders as an inline SVG flowchart in the Logseq page.
 - **Renderer**: `beautiful-mermaid` — SVG rendering engine (pinned version)
 - **Bundler**: Vite — dev server + production build
 - **Entry**: `onMacroRendererSlotted` hook intercepts `{{renderer :bermaid}}` macros
-- **UI**: `provideUI()` injects SVG + resize handles + copy button + lightbox trigger into the renderer slot
-- **Styling**: `provideStyle()` injects CSS for container, lightbox, zoom controls, and error states
-- **Host scope**: resize drag, context menu, lightbox, and zoom/pan use `window.top.document` event listeners; cleaned up on `beforeunload`
+- **UI**: `provideUI()` injects a CSS-resizable wrapper + SVG + copy button + lightbox trigger into the renderer slot
+- **Lightbox**: `src/lightbox.ts`, PhotoSwipe 5 in the plugin's main UI iframe
+- **Styling**: `provideStyle()` injects CSS for the wrapper, resize grip, copy button, and error states; PhotoSwipe's CSS is bundled into the plugin frame
+- **Host scope**: none. Nothing depends on `window.top.document`; the only `ensureHostScope()` call is the clipboard fallback
 
 ## Testing Strategy
 
@@ -138,7 +138,5 @@ End-to-end tests using Playwright against Logseq at localhost:3001:
 4. Invalid syntax shows error message
 5. Theme switching updates diagram colors
 6. Hover shows copy button; click copies PNG to clipboard
-7. Right-click shows context menu with "Copy as PNG"
-8. Drag resize handles change diagram width; width persists on reload (DB graph)
-9. Click diagram opens lightbox; Esc / ✕ / backdrop closes it
-10. Mouse-wheel zoom and click-drag pan work inside the lightbox
+7. Drag the resize grip changes diagram width; the macro arg is rewritten and the aspect ratio is kept (`scripts/e2e/resize.mjs`, run from an installed copy)
+8. Click diagram opens the lightbox in the plugin frame; Esc / ✕ / backdrop closes it; zoom button and mouse wheel zoom (`scripts/e2e/lightbox.mjs`, run from an installed copy)

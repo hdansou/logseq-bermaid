@@ -20,6 +20,10 @@ Resizing and the lightbox work again for marketplace installs. Development now t
 - **Resizing now scales height as well as width.** `.bermaid-container` is a flex container, and flex's default `align-items: stretch` was stretching the SVG to the container's cross-size, overriding the aspect ratio implied by its `viewBox`. Width changed, height did not follow. Setting `align-items: flex-start` lets `height: auto` preserve proportions.
 - **Pending re-render timers are now cleared on unload.** `beforeunload` drained the hook list but left the live-re-render debounce timers running; they would fire against a torn-down plugin and call `provideUI` on a dead slot.
 
+### Security
+
+- **`npm audit` stays at 0 vulnerabilities** after upgrading `@logseq/libs` to 0.3.4 (published under the `next` dist-tag; npm's `latest` is a stale 0.0.17). Two advisories that appeared since 0.4.1 are cleared via overrides: `dompurify` `^3.4.16` (GHSA-p98j-92pf-mc4p, GHSA-6688-9rhm-gjv2, IN_PLACE sanitiser bypasses) and `source-map-js` `^1.2.2` (GHSA-68fv-2mgg-jv7q, build-time only). Diagram text is entity-escaped by the renderer before it reaches the host page; verified against hostile labels.
+
 ### Known issues
 
 - **Why the old handles failed in installed plugins.** Installed plugins are served from `lsp://logseq.io/plugins/` while the host app runs at `lsp://logseq.com/`, so `window.top.document` throws a cross-origin `SecurityError` and no drag listener can attach. The plugin bridge forwards only `click`, `focus`, `focusin`, `focusout`, `blur`, `dblclick`, `keyup`, `keypress`, `keydown`, `change`, `input`, and `contextmenu` — **no mouse or wheel events**. Releasing a native resize grip ends in a `click`, which does cross the bridge and carries the element's live rect, and that is how the new grip commits its width.

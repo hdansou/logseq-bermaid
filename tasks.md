@@ -4,28 +4,25 @@ Active work and immediate backlog. Completed work moves to `CHANGELOG.md`.
 
 ---
 
-## Resize investigation — 2026-08-31 → 09-01 (IN PROGRESS, uncommitted)
+## Production-hardening pass — 2026-10-11
 
-**State:** `package.json` says 0.5.0, CHANGELOG has a `[0.5.0]` entry, but **nothing is committed and no tag exists**. Last tag is v0.4.1. Working tree holds the slider, the aspect-ratio fix, and the A#2 timer cleanup.
+Ran on `feat/cross-origin-resize` before cutting v0.5.0. Baseline was green (typecheck, build, `npm audit` 0, clean tree).
 
-**Root cause (proven, not inferred).** Installed plugins load cross-origin (`lsp://logseq.io`) from the host (`lsp://logseq.com`), so `window.top.document` throws and no drag listener can attach. The bridge forwards no mouse or wheel events, so drag cannot be reconstructed. See the "Plugin Origin Split" and "Plugin Bridge Contract" sections in CLAUDE.md — both verified against a running install via a throwaway probe plugin.
+**Applied.**
 
-**Verified working:** width slider resizes correctly from an installed (cross-origin) copy.
+- **A — DRY.** One `svgSize()` in `src/utils/svg.ts` (width/height → viewBox → 800×600) now serves both the PNG export and the lightbox. Stale `resize: horizontal` comment fixed.
+- **C — docs.** `docs/REQUIREMENTS.md` FR-7/8/9 and the architecture section rewritten for the native grip and the in-frame PhotoSwipe lightbox. CHANGELOG 0.5.0 gained a Security section (SDK 0.3.4, dompurify/source-map-js overrides, escaping verified against hostile labels).
+- **E — hygiene.** `ci.yml` on Node 24 like the release workflow and `engines`. GitHub Actions bumped to current majors (checkout/setup-node/upload-artifact v7, gh-release v3).
+- **B — types.** The three `e: any` bridge handlers typed with `BridgeEvent`, matching the payload shape documented in CLAUDE.md.
 
-**Unverified:** the `align-items: flex-start` proportional-height fix, and the edge-thumb variant (slider thumb styled and positioned as the right edge handle, `pointer-events` restricted to the thumb). The open question on the thumb variant is whether its invisible track swallows clicks to the right of narrow diagrams.
+**Deferred (need an explicit yes).**
 
-### Next steps
+- [ ] Delete `icon-alt.svg` (unreferenced) and `scripts/test-insert.js` (superseded by `scripts/e2e/`), with their CLAUDE.md rows.
+- [ ] Local cleanup: `git worktree prune` (stale `pr-1` worktree in a scratchpad), delete branches `pr-1` and `chore/prod-readiness-top3`, delete `../logseq-bermaid-pr1`.
+- [ ] **No unit test framework.** `extractMermaidSyntax()`, `parseWidthArg()`, `svgSize()` and `CappedMap` are pure and untested; vitest 3 fits Vite 7. CI gates only typecheck + build; the e2e scripts under `scripts/e2e/` need a live Logseq and stay manual.
+- [ ] Optional `packageManager` field for Corepack.
 
-- [ ] Verify the edge-thumb variant from `~/.logseq/plugins/logseq-bermaid` — does it drag, does height scale, and can you still click content to the right of a narrow diagram?
-- [ ] If the thumb variant fails, fall back to the bottom slider (already verified) and ship that as 0.5.0.
-- [ ] Mirror the technique to the left handle (also needs `marginLeft` adjustment) only after the right edge is proven.
-- [ ] Decide whether to remove the now-dead host-doc drag listeners, which only function in sideloads.
-
-### Cleanup still outstanding (E from the 08-24 pass)
-
-- [ ] Delete `~/Projects/src/github.com/logseq-dev/plugin-dev/logseq-bermaid-pr1` — a stale v0.3.0 staging copy that produced **two** false "drag works now" readings. Do not delete while it is the registered external.
-- [ ] `git worktree prune`; delete branches `pr-1` and `chore/prod-readiness-top3` (both verified superseded).
-- [ ] Remove the `logseq-bermaid-probe` plugin from `~/.logseq/plugins/` when done with bridge questions.
+**Resize + lightbox outcome (closes the 08-31 investigation).** The slider could not be grabbed cross-origin at all. What shipped: a native CSS `resize: both` grip committed through a `data-rect` click, and the lightbox moved into the plugin's own iframe as PhotoSwipe. Both verified red→green from `~/.logseq/plugins` with `scripts/e2e/resize.mjs` and `scripts/e2e/lightbox.mjs`. Details and the three PhotoSwipe-in-an-iframe traps are in CLAUDE.md.
 
 ---
 
@@ -52,5 +49,5 @@ Ran after merging [#1](https://github.com/hdansou/logseq-bermaid/pull/1) and rel
 ## Open backlog
 
 - [ ] **Marketplace PR.** Open against `logseq/marketplace`. Manifest + body drafted, awaiting `supportsDBOnly: false` confirmation. Now also needs the v0.4.0 entry.
-- [ ] **GitHub Actions Node 24 readiness.** `actions/checkout@v4`, `setup-node@v4`, `upload-artifact@v4`, `softprops/action-gh-release@v2` are all being force-run on Node 24 and are slated for forced removal Sept 2026 — the v0.4.0 release run warned about this. Bump to v5 next time the workflows are touched.
-- [ ] **Verify v0.4.0 interaction fixes against a real marketplace install.** Neither the shadow-mode fix nor #1's multi-document listener binding was tested in the iframe-sandboxed environment they target; sideload cannot distinguish them.
+- [x] **GitHub Actions Node 24 readiness.** Done 2026-10-11: actions on current majors, workflows on Node 24.
+- [x] **Verify interaction fixes against a real marketplace install.** Done 2026-10-11 via the cross-origin test loop; v0.5.0 is the first release whose resize and lightbox were verified from `~/.logseq/plugins`.
