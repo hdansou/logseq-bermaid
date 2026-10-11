@@ -10,6 +10,21 @@ import { BERMAID_STYLES } from './styles'
 import { openLightbox, closeLightbox } from './lightbox'
 import { escapeHtml } from './utils/text'
 
+/**
+ * What the plugin bridge hands a `data-on-*` handler. Verified empirically
+ * against a running install (see CLAUDE.md "Plugin Bridge Contract"): `value`
+ * is always a string, `rect` is present only when the element carries
+ * `data-rect`, and there is no key identity on keyboard events.
+ */
+interface BridgeEvent {
+  type: string
+  value?: string
+  id?: string
+  className?: string
+  dataset?: Record<string, string | undefined>
+  rect?: { width: number; height: number; x: number; y: number }
+}
+
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 /** Retry an async function up to `attempts` times with `delay` ms between tries. */
@@ -158,7 +173,7 @@ function scheduleRerender(macroUuid: string): void {
 }
 
 function buildDiagramHtml(blockUuid: string, svg: string, width: number): string {
-  // Resize is a native CSS grip on the wrapper (resize: horizontal). The
+  // Resize is a native CSS grip on the wrapper (resize: both, see styles). The
   // browser performs the drag itself, so it needs no pointer listeners -- the
   // only path that works for installed (cross-origin) plugins, where the host
   // document is unreachable and the bridge forwards no mouse events.
@@ -218,23 +233,24 @@ async function main() {
 
   // --- Event Handlers Model ---
   logseq.provideModel({
-    async bermaidCopyImage(e: any) {
+    async bermaidCopyImage(e: BridgeEvent) {
       const uuid = e.dataset?.blockUuid
       if (uuid) {
         await copyImageToClipboard(uuid, getSettings().transparentBg)
       }
     },
-    async bermaidOpenFullscreen(e: any) {
-      const svg = svgCache.get(e.dataset?.blockUuid)
+    async bermaidOpenFullscreen(e: BridgeEvent) {
+      const uuid = e.dataset?.blockUuid
+      const svg = uuid ? svgCache.get(uuid) : undefined
       if (svg) openLightbox(svg)
     },
-    async bermaidWrapperClick(e: any) {
-      const uuid = e?.dataset?.blockUuid
-      const tracked = renderedSlots.get(uuid)
-      const svg = svgCache.get(uuid)
+    async bermaidWrapperClick(e: BridgeEvent) {
+      const uuid = e.dataset?.blockUuid
+      const tracked = uuid ? renderedSlots.get(uuid) : undefined
+      const svg = uuid ? svgCache.get(uuid) : undefined
       if (!uuid || !tracked || !svg) return
       // rect is only attached because the wrapper carries data-rect.
-      const measured = Number(e?.rect?.width)
+      const measured = Number(e.rect?.width)
       const width = Number.isFinite(measured) && measured > 0
         ? Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, Math.round(measured)))
         : tracked.width

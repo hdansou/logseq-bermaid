@@ -1,6 +1,7 @@
 import PhotoSwipeLightbox from 'photoswipe/lightbox'
 import PhotoSwipe from 'photoswipe'
 import 'photoswipe/style.css'
+import { svgSize } from './utils/svg'
 
 /**
  * Fullscreen diagram viewer.
@@ -17,17 +18,6 @@ import 'photoswipe/style.css'
  */
 
 let current: PhotoSwipeLightbox | null = null
-
-/** Intrinsic size from width/height attributes, else the viewBox, else a sane default. */
-export function svgSize(svg: string): { width: number; height: number } {
-  const el = new DOMParser().parseFromString(svg, 'image/svg+xml').querySelector('svg')
-  const w = parseFloat(el?.getAttribute('width') ?? '')
-  const h = parseFloat(el?.getAttribute('height') ?? '')
-  if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return { width: w, height: h }
-  const vb = (el?.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number)
-  if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) return { width: vb[2], height: vb[3] }
-  return { width: 800, height: 600 }
-}
 
 export function openLightbox(svg: string): void {
   closeLightbox()
