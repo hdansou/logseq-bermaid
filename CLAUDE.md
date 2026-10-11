@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+Node 24+ (`.nvmrc`, `engines`, CI). With nvm: `nvm use`.
+
 ```bash
 npm install       # Install dependencies
 npm run build     # Production build → dist/ (terser minification, no sourcemaps)

@@ -24,7 +24,7 @@ Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [bea
 1. Install dependencies:
 
    ```bash
-   npm install
+   npm install   # Node 24+ (see .nvmrc)
    ```
 
 2. Build the plugin:
