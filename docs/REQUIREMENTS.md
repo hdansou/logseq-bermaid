@@ -119,7 +119,7 @@ This renders as an inline SVG flowchart in the Logseq page.
 
 ## Technical Architecture
 
-- **SDK**: `@logseq/libs` ≥ 0.3.2 — Logseq Plugin SDK. Minimum version is enforced at compile time by `src/__sdk_guard__.ts`, which references an API introduced in 0.3.x; `npm run typecheck` fails on any downgrade.
+- **SDK**: `@logseq/libs` ≥ 0.3.4 — Logseq Plugin SDK (manifest `minSDKVersion` must match the floor in `package.json`). Minimum version is enforced at compile time by `src/__sdk_guard__.ts`, which references an API introduced in 0.3.x; `npm run typecheck` fails on any downgrade.
 - **Renderer**: `beautiful-mermaid` — SVG rendering engine (pinned version)
 - **Bundler**: Vite — dev server + production build
 - **Entry**: `onMacroRendererSlotted` hook intercepts `{{renderer :bermaid}}` macros

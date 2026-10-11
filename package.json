@@ -61,7 +61,7 @@
     "supportsDB": true,
     "supportsDBOnly": false,
     "effect": false,
-    "minSDKVersion": "0.3.2",
+    "minSDKVersion": "0.3.4",
     "sponsors": []
   }
 }
