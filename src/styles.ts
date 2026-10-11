@@ -3,15 +3,36 @@ export const BERMAID_STYLES = `
     position: relative;
     display: inline-block;
     min-width: 200px;
-    max-width: none;
+    max-width: 100%;
     box-sizing: border-box;
-    overflow: visible;
+    /* Native resize grip: the browser drags it, no JS involved. resize needs
+       overflow != visible. The grip release ends in a click that the bridge
+       forwards with the wrapper's live rect (see buildDiagramHtml).
+
+       'both', not 'horizontal', on purpose: the SVG keeps its aspect ratio, so
+       a horizontal-only grip would move UP as the width shrinks, the release
+       would land on whatever sits below the diagram, and the click would never
+       reach this element. With 'both' the corner tracks the pointer on both
+       axes, so the release is always on the wrapper. Only the width is
+       persisted; the re-render after commit drops the dragged height. */
+    resize: both;
+    overflow: hidden;
     font-size: 0;
     line-height: 0;
   }
-  .bermaid-wrapper.bermaid-resizing {
-    outline: 2px solid var(--ls-primary-background-color, #3b82f6);
-    user-select: none;
+  .bermaid-wrapper::-webkit-resizer {
+    background: linear-gradient(135deg, transparent 0 50%, var(--ls-active-primary-color, #7c3aed) 50% 100%);
+    opacity: 0.35;
+    border-bottom-right-radius: 4px;
+  }
+  .bermaid-wrapper:hover::-webkit-resizer {
+    opacity: 0.8;
+  }
+  /* Feedback while the grip is held: the diagram itself cannot track the
+     pointer mid-drag (no events cross the bridge), only the box can. */
+  .bermaid-wrapper:active {
+    outline: 2px dashed var(--ls-active-primary-color, #7c3aed);
+    outline-offset: -2px;
   }
   .bermaid-container {
     display: flex;
@@ -67,107 +88,6 @@ export const BERMAID_STYLES = `
   .bermaid-copy-btn svg {
     display: block;
     pointer-events: none;
-  }
-  /* Width slider — the resize path that works in installed (cross-origin)
-     plugins, where the edge handles' drag listeners can never attach.
-     Hidden until hover so it stays out of the way. */
-  /* The thumb IS the right edge handle.
-
-     The track spans MIN..MAX diagram width in real pixels (left/width are set
-     inline), so the thumb lands at x == the diagram's current right edge and
-     dragging it horizontally reads as dragging the edge itself.
-
-     The track therefore extends past the diagram whenever width < MAX, so it
-     must not intercept clicks on whatever sits to the right: pointer-events is
-     none on the input and re-enabled only on the thumb. */
-  .bermaid-width-slider {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    background: transparent;
-    border: none;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    pointer-events: none;
-    z-index: 6;
-  }
-  .bermaid-width-slider::-webkit-slider-runnable-track {
-    background: transparent;
-    border: none;
-    height: 100%;
-  }
-  .bermaid-width-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    pointer-events: auto;
-    width: 6px;
-    height: 56px;
-    border-radius: 3px;
-    background: var(--ls-active-primary-color, #7c3aed);
-    cursor: col-resize;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-  .bermaid-wrapper:hover .bermaid-width-slider::-webkit-slider-thumb {
-    opacity: 0.55;
-  }
-  .bermaid-width-slider::-webkit-slider-thumb:hover,
-  .bermaid-width-slider:focus::-webkit-slider-thumb {
-    opacity: 1;
-  }
-  /* The static right handle is replaced by the thumb above; keeping both would
-     render two bars at the same edge. The left handle still works same-origin. */
-  .bermaid-resize-right {
-    display: none;
-  }
-  .bermaid-resize-handle {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 12px;
-    cursor: col-resize;
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: all;
-  }
-  .bermaid-resize-handle::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 3px;
-    height: 40px;
-    background: var(--ls-link-text-color, #3b82f6);
-    border-radius: 2px;
-    box-shadow: 0 0 4px rgba(0,0,0,0.2);
-    opacity: 0;
-    transition: opacity 0.2s;
-  }
-  .bermaid-resize-left {
-    left: 0;
-  }
-  .bermaid-resize-right {
-    right: 0;
-  }
-  .bermaid-wrapper:hover .bermaid-resize-handle {
-    background: rgba(59, 130, 246, 0.06);
-  }
-  .bermaid-wrapper:hover .bermaid-resize-handle::after {
-    opacity: 0.6;
-  }
-  .bermaid-resize-handle:hover {
-    background: rgba(59, 130, 246, 0.15);
-  }
-  .bermaid-resize-handle:hover::after {
-    opacity: 1 !important;
-  }
-  .bermaid-wrapper.bermaid-resizing .bermaid-resize-handle::after {
-    opacity: 1 !important;
   }
   .bermaid-loading {
     color: var(--ls-secondary-text-color, #999);

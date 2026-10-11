@@ -6,13 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-08-31
+## [0.5.0] - 2026-10-11
 
 Resizing works again for marketplace installs, and it now scales proportionally.
 
-### Added
+### Changed
 
-- **Width slider.** Hover a diagram and a slider appears along its bottom edge; drag it to resize. This is the resize path that works in **installed** plugins, where the edge handles cannot function (see below). Commits on release and persists into the macro arg exactly as before, so `{{renderer :bermaid, 666}}` is still the source of truth.
+- **Resize is a native grip, not drag handles.** Hover a diagram and a small grip appears in its bottom-right corner; drag it to resize. The browser performs the drag itself (CSS `resize`), so it works in **installed** plugins, where the old edge handles could never attach their listeners (see below). The width still persists into the macro arg exactly as before, so `{{renderer :bermaid, 666}}` is still the source of truth. The edge handles are gone: one mechanism, working everywhere, instead of two.
 
 ### Fixed
 
@@ -21,8 +21,8 @@ Resizing works again for marketplace installs, and it now scales proportionally.
 
 ### Known issues
 
-- **Drag-to-resize via the edge handles only works in sideloaded plugins**, not installed ones. Installed plugins are served from `lsp://logseq.io/plugins/` while the host app runs at `lsp://logseq.com/`, so `window.top.document` throws a cross-origin `SecurityError` and no drag listener can attach. The plugin bridge forwards only `click`, `focus`, `focusin`, `focusout`, `blur`, `dblclick`, `keyup`, `keypress`, `keydown`, `change`, `input`, and `contextmenu` — **no mouse or wheel events** — so a drag gesture cannot be reconstructed. The slider exists precisely because it is a control the browser drags natively, reporting through `change`, which does cross the bridge. The edge handles are retained since they still work same-origin.
-- Lightbox pan, wheel-zoom, and Esc-to-close remain unavailable in installed plugins for the same reason. Esc specifically cannot be recovered even via `data-on-keydown`: the forwarded payload carries `type`, `value`, `id`, `className`, and `dataset`, but no key identity, so Esc is indistinguishable from any other key. Lightbox open/close and the zoom buttons work, because they are clicks.
+- **Why the old handles failed in installed plugins.** Installed plugins are served from `lsp://logseq.io/plugins/` while the host app runs at `lsp://logseq.com/`, so `window.top.document` throws a cross-origin `SecurityError` and no drag listener can attach. The plugin bridge forwards only `click`, `focus`, `focusin`, `focusout`, `blur`, `dblclick`, `keyup`, `keypress`, `keydown`, `change`, `input`, and `contextmenu` — **no mouse or wheel events**. Releasing a native resize grip ends in a `click`, which does cross the bridge and carries the element's live rect, and that is how the new grip commits its width.
+- Lightbox pan, wheel-zoom, the zoom `+`/`-` buttons and Esc-to-close remain unavailable in installed plugins for the same reason: all of them mutate the lightbox through the host document. Lightbox open/close works, because those are clicks that re-render the overlay.
 
 ## [0.4.1] - 2026-08-31
 

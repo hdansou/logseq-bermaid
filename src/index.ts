@@ -64,16 +64,6 @@ function resetLightboxState(): void {
   lightboxDragState = null
 }
 
-/** Resize state */
-interface ResizeState {
-  uuid: string
-  startWidth: number
-  startX: number
-  side: 'left' | 'right'
-  wrapperEl: HTMLElement
-}
-let resizeState: ResizeState | null = null
-
 function getSettings() {
   return {
     theme: (logseq.settings?.theme as string) || 'auto',
@@ -241,9 +231,19 @@ function scheduleRerender(macroUuid: string): void {
 }
 
 function buildDiagramHtml(blockUuid: string, svg: string, width: number): string {
+  // Resize is a native CSS grip on the wrapper (resize: horizontal). The
+  // browser performs the drag itself, so it needs no pointer listeners -- the
+  // only path that works for installed (cross-origin) plugins, where the host
+  // document is unreachable and the bridge forwards no mouse events.
+  //
+  // Releasing the grip ends with a `click` on the wrapper. `click` IS forwarded
+  // by the bridge, and `data-rect` makes it carry a live getBoundingClientRect,
+  // which already holds the new width. bermaidWrapperClick compares that to the
+  // rendered width and commits the difference into the macro arg.
   return `
-    <div class="bermaid-wrapper" data-block-uuid="${blockUuid}" style="width: ${width}px;">
-      <div class="bermaid-resize-handle bermaid-resize-left" data-side="left"></div>
+    <div class="bermaid-wrapper" data-block-uuid="${blockUuid}" style="width: ${width}px;"
+         data-rect="true"
+         data-on-click="bermaidWrapperClick">
       <div class="bermaid-container"
            data-on-click="bermaidOpenFullscreen"
            data-block-uuid="${blockUuid}">
@@ -258,27 +258,6 @@ function buildDiagramHtml(blockUuid: string, svg: string, width: number): string
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>
       </button>
-      <div class="bermaid-resize-handle bermaid-resize-right" data-side="right"></div>
-      <!--
-        Width slider. The edge handles above only work when the plugin is
-        same-origin with the host (sideloads, served from lsp://logseq.com).
-        Installed plugins are served from lsp://logseq.io, so window.top.document
-        throws and no drag listener can ever attach. The plugin bridge forwards
-        only click/focus/blur/dblclick/key*/change/input/contextmenu -- no mouse
-        events -- so a native control the browser drags for us is the only path
-        that works in an installed plugin. value arrives as a string.
-
-        Commit on change (fires on release), never on input: provideUI replaces
-        the whole slot template, which would destroy this very input mid-gesture
-        and abort the drag. The browser renders thumb movement during the drag;
-        the diagram snaps to the new width on release.
-      -->
-      <input type="range" class="bermaid-width-slider"
-             min="${MIN_DIAGRAM_WIDTH}" max="${MAX_DIAGRAM_WIDTH}" value="${width}"
-             style="left: ${MIN_DIAGRAM_WIDTH}px; width: ${MAX_DIAGRAM_WIDTH - MIN_DIAGRAM_WIDTH}px;"
-             data-on-change="bermaidWidthCommit"
-             data-block-uuid="${blockUuid}"
-             title="Drag to resize (${width}px)">
     </div>
   `
 }
@@ -340,22 +319,27 @@ async function main() {
       if (!uuid) return
       showFullscreen(uuid)
     },
-    async bermaidWidthCommit(e: any) {
+    async bermaidWrapperClick(e: any) {
       const uuid = e?.dataset?.blockUuid
       if (!uuid) return
-      // The bridge forwards `value` as a string, same as macro args.
-      const width = Number(String(e?.value ?? '').trim())
-      if (!Number.isFinite(width)) return
-      const clamped = Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, width))
-
+      // rect is only attached because the wrapper carries data-rect.
+      const measured = Number(e?.rect?.width)
+      if (!Number.isFinite(measured) || measured <= 0) return
       const tracked = renderedSlots.get(uuid)
+      const current = tracked?.width ?? DEFAULT_DIAGRAM_WIDTH
+      const width = Math.round(measured)
+      // A plain click on the wrapper (not a grip release) measures the width
+      // we rendered; nothing to do.
+      if (Math.abs(width - current) < 1) return
+      const clamped = Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, width))
+      console.log('Bermaid: resize commit', { uuid, current, measured, clamped })
       const svg = svgCache.get(uuid)
       if (tracked && svg) {
         renderedSlots.set(uuid, { ...tracked, width: clamped })
         renderSlot(uuid, tracked.slot, buildDiagramHtml(uuid, svg, clamped))
       }
       // Persist into the macro arg. Also re-fires the renderer, which is
-      // harmless — it lands on the same width we just rendered.
+      // harmless -- it lands on the same width we just rendered.
       await writeWidthToMacro(uuid, clamped)
     },
     async bermaidCloseFullscreen(e: any) {
@@ -390,7 +374,7 @@ async function main() {
   try {
     hostScope = await Promise.resolve(logseq.Experiments.ensureHostScope())
   } catch (err) {
-    console.warn('Could not get host scope for resize:', err)
+    console.warn('Could not get host scope:', err)
   }
 
   // hostDoc declared above (before provideModel); resolve it here.
@@ -409,10 +393,10 @@ async function main() {
     console.warn('Bermaid: Could not access host document', err)
   }
 
-  // Bind the resize/lightbox listeners to every distinct document involved.
-  // The rendered diagram (and its resize handles) may live in a different
-  // document than the host scope; binding to both ensures the mousedown that
-  // carries `.bermaid-resize-handle` actually reaches our handler.
+  // Bind the lightbox listeners (pan, wheel-zoom, Esc) to every distinct
+  // document involved. These only work same-origin (sideloads); installed
+  // plugins cannot reach the host document, see CLAUDE.md "Plugin Origin Split".
+  // Diagram resize deliberately does NOT depend on any of this.
   const targetDocs: Document[] = []
   for (const d of [hostDoc, typeof document !== 'undefined' ? document : null]) {
     if (d && !targetDocs.includes(d)) targetDocs.push(d)
@@ -428,32 +412,7 @@ async function main() {
       return null
     }
 
-    const onMouseMove = (e: MouseEvent) => {
-      // Handle resize dragging
-      if (resizeState) {
-        const delta = e.clientX - resizeState.startX
-        const wrapper = resizeState.wrapperEl
-        
-        let newWidth: number
-        if (resizeState.side === 'right') {
-          newWidth = resizeState.startWidth + delta
-        } else { // left
-          newWidth = resizeState.startWidth - delta
-        }
-        
-        // Clamp width
-        const maxWidth = Math.max(wrapper.parentElement?.offsetWidth || MAX_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH)
-        newWidth = Math.max(MIN_DIAGRAM_WIDTH, Math.min(maxWidth, newWidth))
-        
-        wrapper.style.width = `${newWidth}px`
-        
-        // For left handle, adjust margin to keep right edge anchored
-        if (resizeState.side === 'left') {
-          const widthDiff = newWidth - resizeState.startWidth
-          wrapper.style.marginLeft = `${-widthDiff}px`
-        }
-      }
-
+      const onMouseMove = (e: MouseEvent) => {
       // Handle lightbox pan dragging
       if (lightboxDragState) {
         const dx = e.clientX - lightboxDragState.startX
@@ -464,27 +423,9 @@ async function main() {
       }
     }
 
-    // Mouse down on resize handle or lightbox content for pan
+    // Mouse down on lightbox content starts a pan
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
-      if (target?.classList?.contains('bermaid-resize-handle')) {
-        e.preventDefault()
-        const side = target.dataset.side as 'left' | 'right'
-        const wrapper = target.closest('.bermaid-wrapper') as HTMLElement
-        const uuid = wrapper?.dataset?.blockUuid
-
-        if (uuid && wrapper) {
-          resizeState = {
-            uuid,
-            startWidth: wrapper.offsetWidth,
-            startX: e.clientX,
-            side,
-            wrapperEl: wrapper,
-          }
-          wrapper.classList.add('bermaid-resizing')
-        }
-      }
-      
       // Start lightbox pan when dragging on content (but not on buttons)
       if (fullscreenVisible && target?.closest?.('.bermaid-lightbox-content') && !(target as HTMLElement).closest?.('button')) {
         lightboxDragState = {
@@ -500,20 +441,8 @@ async function main() {
 
     }
 
-    // Mouse up - finish resize or lightbox pan
-    const onMouseUp = async () => {
-      if (resizeState) {
-        const wrapper = resizeState.wrapperEl
-        wrapper.classList.remove('bermaid-resizing')
-        wrapper.style.marginLeft = '' // Clear temporary margin
-
-        const finalWidth = wrapper.offsetWidth
-        const { uuid } = resizeState
-        resizeState = null
-        // Persist into the macro args. The updateBlock will re-fire
-        // onMacroRendererSlotted, which re-renders at the new width.
-        await writeWidthToMacro(uuid, finalWidth)
-      }
+    // Mouse up - finish lightbox pan
+    const onMouseUp = () => {
       if (lightboxDragState) {
         lightboxDragState = null
         const contentEl = queryEl<HTMLElement>('.bermaid-lightbox-content')
@@ -613,7 +542,6 @@ async function main() {
 
   logseq.beforeunload(async () => {
     hideFullscreen()
-    resizeState = null
     // Pending debounce timers outlive the hooks below; without this they fire
     // against a torn-down plugin and call provideUI on a dead slot.
     for (const timer of rerenderTimers.values()) {

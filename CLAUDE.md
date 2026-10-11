@@ -68,7 +68,7 @@ These skills are available and relevant to this project:
 - **`onMacroRendererSlotted` hook** — core rendering hook (see Data Flow below)
 - **`onThemeModeChanged` hook** — updates `currentThemeMode` and re-renders all tracked diagrams with the new theme
 - **`DB.onChanged` subscription** — live re-render when a tracked macro or its source child is edited; debounced per macro (~350 ms) via `scheduleRerender()` → `rerenderTrackedDiagram()`. Holds the last good render rather than flashing an error on transient invalid syntax mid-typing
-- **Host-scope DOM events** — `mousemove`, `mousedown`, `mouseup`, `scroll`, `contextmenu` for resize, context menu, lightbox zoom, and lightbox pan. Bound to every distinct document (host scope + plugin document, de-duplicated)
+- **Host-scope DOM events** — `mousemove`, `mousedown`, `mouseup`, `wheel`, `keydown` for lightbox pan, zoom and Esc. Bound to every distinct document (host scope + plugin document, de-duplicated). Same-origin only; resize deliberately does not use them
 
 ### Data Flow for Diagram Rendering
 
@@ -81,7 +81,7 @@ These skills are available and relevant to this project:
   → cache SVG in svgCache (CappedMap<uuid, string>)
   → track slot in renderedSlots for theme-change re-rendering
   → parseWidthArg(payload.arguments) → width from the macro's 2nd positional arg
-  → provideUI() via buildDiagramHtml() → SVG container + resize handles + copy button + lightbox trigger
+  → provideUI() via buildDiagramHtml() → CSS-resizable wrapper (data-rect click commit) + SVG container + copy button + lightbox trigger
 ````
 
 ### Lightbox (Zoom & Pan)
@@ -96,12 +96,12 @@ These skills are available and relevant to this project:
 
 ### Resize Mechanism
 
-- Drag left/right handles → `resizeState` tracks origin and side
-- `mousemove` updates wrapper `width` style; left-side drag also adjusts `marginLeft`
-- `mouseup` calls `writeWidthToMacro()` → rewrites the parent block's macro line to `{{renderer :bermaid, NNN}}` via `Editor.updateBlock`, after `exitEditingMode(true)`
-- Width is read back by `parseWidthArg()` from the macro's second positional arg — clamped, falling back to `DEFAULT_DIAGRAM_WIDTH` (250px) when absent or non-numeric
-- Works in both file-based and DB graphs; there is no block-property or cache involved in width persistence
-- Min: 200px, Max: parent width or 1200px
+- The wrapper is a native CSS-resizable box: `resize: both; overflow: hidden`. The browser performs the drag; the plugin has **no** pointer listeners for resize, which is why it works in installed (cross-origin) plugins.
+- Releasing the grip ends in a `click` on the wrapper. The wrapper carries `data-rect` and `data-on-click="bermaidWrapperClick"`, so the bridge forwards that click with a live `getBoundingClientRect()`. The handler compares `rect.width` to the width it rendered; if they differ, it re-renders and calls `writeWidthToMacro()`, which rewrites the parent block's macro line to `{{renderer :bermaid, NNN}}` via `Editor.updateBlock` after `exitEditingMode(true)`.
+- `resize: both`, not `horizontal`, on purpose. The SVG keeps its aspect ratio, so a horizontal-only grip moves *up* as the width shrinks; the release then lands on whatever sits below the diagram and the click's target becomes the block, which the bridge never sees. With `both`, the corner tracks the pointer on both axes. Only the width is persisted; the re-render after commit drops the dragged height.
+- Width is read back by `parseWidthArg()` from the macro's second positional arg — clamped, falling back to `DEFAULT_DIAGRAM_WIDTH` (250px) when absent or non-numeric. Works in both file-based and DB graphs; no block property or cache is involved.
+- Min: 200px (`MIN_DIAGRAM_WIDTH`), max: `MAX_DIAGRAM_WIDTH` (1200px) in the handler and `max-width: 100%` in CSS.
+- E2E test: `node scripts/e2e/resize.mjs --port <cdp port> --uuid <macro block uuid> [--dx N]` performs a real pointer drag on the grip against a running Logseq instance and asserts live width, persistence, macro rewrite, aspect ratio, and that the block did not enter edit mode. Run it from an **installed** copy (see the test loop below); it was red on the slider build and the edge handles, green on the grip.
 
 ### Caching
 
@@ -141,13 +141,14 @@ All theme names are defined in `src/constants.ts`.
 | `src/render.ts`              | Mermaid render pipeline — lazy-loads `beautiful-mermaid`, builds options, trims SVG, copy-to-PNG                                     |
 | `src/cache.ts`               | `CappedMap` LRU + the two cache instances (`svgCache`, `renderedSlots`) and the `RenderedSlot` type                                  |
 | `src/constants.ts`           | Theme choices, auto-theme mapping, default width (250px)                                                                             |
-| `src/styles.ts`              | CSS injected into Logseq; includes lightbox, zoom controls, resize handles                                                           |
+| `src/styles.ts`              | CSS injected into Logseq; includes lightbox, zoom controls, the native resize grip                                                   |
 | `src/utils/svg.ts`           | SVG to PNG Blob conversion                                                                                                           |
 | `src/utils/text.ts`          | `escapeHtml()` for safe error message display                                                                                        |
 | `vite.config.ts`             | Vite config; terser minification, no sourcemaps; dev server on port 8080                                                             |
 | `vite-logseq-safe-plugin.ts` | Custom Vite plugin replacing `vite-plugin-logseq`; handles dev-server CORS, HMR safety, and writes `dist/index.html` on watch builds |
 | `icon.svg` / `icon-alt.svg`  | Plugin icons; `icon.svg` is referenced by `package.json` `logseq.icon`                                                               |
 | `scripts/test-insert.js`     | Playwright-cli eval snippet for manual block-insert smoke tests                                                                      |
+| `scripts/e2e/resize.mjs`     | E2E drag-to-resize test against a running Logseq instance over CDP; red/green gate for the installed (cross-origin) path             |
 | `docs/`                      | Internal reference docs (`REQUIREMENTS.md`, `MARKETPLACE_SUBMISSION.md`)                                                             |
 
 ### Build
@@ -174,7 +175,7 @@ Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packag
 - **`provideUI` template is a string** — no JSX; HTML must be a template literal. Use `data-on-click` attributes for event handlers registered via `provideModel()`.
 - **Renderer slot `display: inline-flex`** — SVGs and large content need `width: 100%` CSS override to fill the slot.
 - **Macro args are always strings** — `payload.arguments` hands back strings even for numeric args. Always coerce with `Number()` and validate with `Number.isFinite()` before use; see `parseWidthArg()`.
-- **Host-doc access silently no-ops in sandboxed installs** — marketplace installs load the plugin in a cross-origin iframe, so `logseq.Experiments.ensureHostScope()` throws a `SecurityError` and `window.top.document` is unreachable. Any `if (hostDoc) { ... }` block then becomes a silent no-op, taking every host-scope listener with it — this broke drag-to-resize, lightbox pan, wheel-zoom, and Esc-to-close from v0.2.x onward without a single error surfacing. **Still unfixed.** See the shadow-mode entry below for the approach that does *not* work.
+- **Host-doc access silently no-ops in sandboxed installs** — marketplace installs load the plugin in a cross-origin iframe, so `logseq.Experiments.ensureHostScope()` throws a `SecurityError` and `window.top.document` is unreachable. Any `if (hostDoc) { ... }` block then becomes a silent no-op, taking every host-scope listener with it — this broke drag-to-resize, lightbox pan, wheel-zoom, zoom buttons and Esc-to-close from v0.2.x onward without a single error surfacing. Resize was fixed in v0.5.0 by not using host listeners at all (native CSS `resize` + `data-rect` click, see Resize Mechanism); the lightbox interactions are still host-document-bound. See the shadow-mode entry below for the approach that does *not* work.
 - **Do NOT set `"mode": "shadow"` in the manifest** — it looks like the fix for the host-doc problem above, and it is not. v0.4.0 shipped it and the plugin failed to load entirely, on *every* install type (sideload included), with `TypeError: gs is not a function`. Logseq's shadow path (`LSPluginLocal._setupShadowSandbox` → `LSPluginShadow.load`) destructures `const {importHTML, createSandboxContainer} = window.QSandbox || {}`, but no shipped Logseq build defines `window.QSandbox` — `qiankun` is not bundled and no script tag provides it. The `|| {}` makes it degrade to `undefined` functions rather than a clear error, and `this.shadow ? _setupShadowSandbox() : _setupIframeSandbox()` is a hard branch with **no fallback**, so choosing shadow means the plugin never registers. Reverted in v0.4.1. To check any future build: `strings app.asar | grep -c QSandbox` — you need an *assignment*, not just the two consumer destructures.
 
 ### Plugin Origin Split — read this before touching any interaction code
@@ -221,7 +222,9 @@ Cross-origin plugins can only receive DOM events that Logseq explicitly forwards
 - `value` is always a **string** — coerce with `Number()` and validate, same as macro args.
 - `rect` is live `getBoundingClientRect()` at event time, and reflects CSS-resized geometry.
 - There is **no key identity on `keydown`** — Esc cannot be distinguished from any other key, so Esc-to-close is not recoverable this way.
-- `provideUI` replaces the **entire** slot template, so re-rendering during a drag destroys the element being dragged. Commit on `change` (release), never on `input`.
+- `provideUI` replaces the **entire** slot template, so re-rendering during a drag destroys the element being dragged. Commit on release, never mid-gesture.
+- **A native CSS `resize` grip drag ends in a `click` on the resized element**, and `rect` on that click already holds the new size. That is the only drag gesture that crosses the bridge, and it is what diagram resize uses. The release must land on the element itself: if the element's box moves out from under the pointer during the drag (aspect-ratio height following a horizontal-only grip), the click targets a common ancestor outside the slot and is lost.
+- **A `<input type="range">` thumb cannot be made the only hit-testable part of the input.** `pointer-events: none` on the input plus `auto` on `::-webkit-slider-thumb` leaves nothing hit-testable in Chrome; the pointer falls through to the block and opens the editor. Making the whole input hit-testable instead makes its track swallow clicks on everything it overlaps. Tried and dropped before v0.5.0 shipped.
 
 ### Dependency Overrides
 
@@ -239,8 +242,8 @@ Via `vite`:
 - `esbuild: ^0.28.2` — clears GHSA-g7r4-m6w7-qqqr (dev-server arbitrary file read on Windows). `vite@7.3.6` still resolves 0.27.3.
 - `postcss: ^8.5.26` — clears GHSA-fxqj-rqcc-2cmp and GHSA-r28c-9q8g-f849 (sourceMappingURL path traversal).
 - `nanoid: ^3.3.18` — clears GHSA-28wg-ghj8-5hjv and GHSA-2v37-7h3g-55p8 (infinite loop on zero/negative size). Pulled in by `postcss`, which constrains it to `^3`, so **stay in the 3.x line** — overriding to 5.x/6.x would break postcss.
+- `source-map-js: ^1.2.2` — clears GHSA-68fv-2mgg-jv7q (event-loop DoS through indexed source-map section offsets). Pulled in by `postcss`, which resolves 1.2.1 on its own.
 
 `vite` itself is pinned to `^7.3.6` (not 7.3.2) to clear GHSA-fx2h-pf6j-xcff and GHSA-v6wh-96g9-6wx3. Deliberately staying in-major: there is no test framework here today, but a future `vitest` would peer-pin the Vite major, and vite 8 also risks the custom `vite-logseq-safe-plugin.ts`.
 
-- `source-map-js: ^1.2.2` — clears GHSA-68fv-2mgg-jv7q (event-loop DoS through indexed source-map section offsets). Pulled in by `postcss`, which resolves 1.2.1 on its own.
 `npm audit` should report 0 vulnerabilities. When it doesn't, verify each proposed target version actually exists (`npm view <pkg> versions --json | tail`) before writing an override. If a future `@logseq/libs` upgrade requires older majors, drop or relax the relevant override.
