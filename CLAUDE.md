@@ -225,12 +225,14 @@ Cross-origin plugins can only receive DOM events that Logseq explicitly forwards
 
 ### Dependency Overrides
 
-`package.json` declares `overrides` for five transitive deps. Two come in through `@logseq/libs@0.3.2` (runtime), three through `vite` (build-time only — they never reach `dist/`).
+`package.json` declares `overrides` for six transitive deps. Two come in through `@logseq/libs@0.3.4` (runtime), four through `vite` (build-time only — they never reach `dist/`).
+
+Note on `@logseq/libs` itself: the npm `latest` dist-tag is stale and points at 0.0.17. Real releases are published under the `next` tag, so check `npm view @logseq/libs dist-tags` and install the version explicitly (`npm install @logseq/libs@^0.3.4`) rather than trusting `npm install @logseq/libs@latest` or `npm outdated`.
 
 Via `@logseq/libs`:
 
 - `lodash-es: ^4.18.1` — clears GHSA-r5fr-rjxr-66jc (`_.template` code injection) and GHSA-f23m-r3pf-42rh (prototype pollution in `_.unset`/`_.omit`). `@logseq/libs` ships an older lodash-es; the override forces the patched line.
-- `dompurify: ^3.4.14` — clears a large XSS/sanitizer-bypass cluster (GHSA-hpcv-96wg-7vj8, GHSA-r47g-fvhr-h676, GHSA-x4vx-rjvf-j5p4 and others) affecting `<=3.4.12`. Note that `npm audit` reports these as **"No fix available"**, which is wrong — 3.4.14 is published and clears them. Check the registry directly rather than trusting the advisory text.
+- `dompurify: ^3.4.16` — clears a large XSS/sanitizer-bypass cluster (GHSA-hpcv-96wg-7vj8, GHSA-r47g-fvhr-h676, GHSA-x4vx-rjvf-j5p4 and others) affecting `<=3.4.12`, plus the later IN_PLACE advisories GHSA-p98j-92pf-mc4p and GHSA-6688-9rhm-gjv2 affecting `<=3.4.15`. `@logseq/libs@0.3.4` pins 3.3.3. Note that `npm audit` has reported this cluster as **"No fix available"**, which is wrong — check the registry directly rather than trusting the advisory text.
 
 Via `vite`:
 
@@ -240,4 +242,5 @@ Via `vite`:
 
 `vite` itself is pinned to `^7.3.6` (not 7.3.2) to clear GHSA-fx2h-pf6j-xcff and GHSA-v6wh-96g9-6wx3. Deliberately staying in-major: there is no test framework here today, but a future `vitest` would peer-pin the Vite major, and vite 8 also risks the custom `vite-logseq-safe-plugin.ts`.
 
+- `source-map-js: ^1.2.2` — clears GHSA-68fv-2mgg-jv7q (event-loop DoS through indexed source-map section offsets). Pulled in by `postcss`, which resolves 1.2.1 on its own.
 `npm audit` should report 0 vulnerabilities. When it doesn't, verify each proposed target version actually exists (`npm view <pkg> versions --json | tail`) before writing an override. If a future `@logseq/libs` upgrade requires older majors, drop or relax the relevant override.
