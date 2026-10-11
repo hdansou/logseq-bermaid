@@ -152,7 +152,6 @@ All theme names are defined in `src/constants.ts`.
 | `vite.config.ts`             | Vite config; terser minification, no sourcemaps; dev server on port 8080                                                             |
 | `vite-logseq-safe-plugin.ts` | Custom Vite plugin replacing `vite-plugin-logseq`; handles dev-server CORS, HMR safety, and writes `dist/index.html` on watch builds |
 | `icon.svg` / `icon-alt.svg`  | Plugin icons; `icon.svg` is referenced by `package.json` `logseq.icon`                                                               |
-| `scripts/test-insert.js`     | Playwright-cli eval snippet for manual block-insert smoke tests                                                                      |
 | `scripts/e2e/resize.mjs`     | E2E drag-to-resize test against a running Logseq instance over CDP; red/green gate for the installed (cross-origin) path             |
 | `scripts/e2e/lightbox.mjs`   | E2E lightbox test (open, Esc, zoom, close) from the installed path                                                                   |
 | `scripts/e2e/plugin-frame.mjs` | Raw-CDP helper to evaluate inside the cross-origin plugin iframe (Node's built-in WebSocket)                                       |
