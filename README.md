@@ -10,10 +10,9 @@ Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [bea
 
 - Render diagrams from `{{renderer :bermaid}}` using child block content
 - `/bermaid` slash command to insert an empty diagram block, ready for your Mermaid syntax
-- **Lightbox** — click any diagram to open a full-screen overlay with zoom and pan
-- **Zoom & pan** — scroll to zoom (12.5 %–800 %), click-drag to pan, zoom controls pill at the bottom
+- **Lightbox** — click any diagram to view it full-screen in the same viewer Logseq uses for images (PhotoSwipe): zoom, pan, Esc to close
 - Copy rendered diagrams as PNG via hover button
-- Drag to resize diagrams from left or right edge
+- Drag the corner grip to resize diagrams
 - **Live re-render** — edit a diagram's source and the render updates in place, no reload
 - Custom width persists in the macro itself (`{{renderer :bermaid, 500}}`), so it survives in both file-based and DB graphs
 - Theme support with `auto` mode that follows Logseq light/dark mode
@@ -66,11 +65,11 @@ graph TD
 
 ## Interactions
 
-- **Lightbox**: click the diagram to open full-screen; press Esc, click the backdrop, or click the ✕ button to close
-- **Zoom**: scroll the mouse wheel inside the lightbox to zoom toward the cursor; use the `−` / `+` / `⊙` control pill at the bottom
-- **Pan**: click-drag inside the lightbox to pan the diagram
+- **Lightbox**: click the diagram to view it full-screen; press Esc, click the backdrop, or click the ✕ button to close
+- **Zoom**: click the zoom button or the diagram itself to toggle 2×; Ctrl/⌘ + mouse wheel or pinch to zoom freely, up to 8× the fitted size
+- **Pan**: click-drag the diagram (or scroll) when zoomed in
 - **Copy as PNG**: hover and click the copy button
-- **Resize**: drag the left or right resize handle on diagram edges; the width is written back into the macro as `{{renderer :bermaid, NNN}}`
+- **Resize**: drag the grip in the diagram's bottom-right corner; the width is written back into the macro as `{{renderer :bermaid, NNN}}`
 - **Edit**: change the Mermaid source in the child block and the diagram re-renders in place
 
 ## Settings

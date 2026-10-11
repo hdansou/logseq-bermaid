@@ -24,6 +24,11 @@ if (!uuid) { console.error("--uuid required"); process.exit(2); }
 
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
 const page = browser.contexts()[0].pages().find(p => p.url().startsWith("lsp://logseq.com/index.html"));
+// The instance window is small (980x700); a grip dragged past the window edge
+// releases outside the document and no click fires. A user cannot do that
+// either. Deterministic viewport for the gestures below.
+await page.setViewportSize({ width: 1400, height: 900 });
+await page.waitForTimeout(500);
 const sel = `.bermaid-wrapper[data-block-uuid="${uuid}"]`;
 const errors = [];
 page.on("pageerror", e => errors.push(String(e).slice(0, 120)));

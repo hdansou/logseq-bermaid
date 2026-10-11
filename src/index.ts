@@ -3,11 +3,11 @@ import type { BlockEntity, BlockUUIDTuple } from '@logseq/libs/dist/LSPlugin'
 import {
   DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES,
   MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH,
-  ZOOM_MIN, ZOOM_MAX, ZOOM_STEP,
 } from './constants'
 import { svgCache, renderedSlots } from './cache'
 import { renderDiagram, copyImageToClipboard, type RenderConfig } from './render'
 import { BERMAID_STYLES } from './styles'
+import { openLightbox, closeLightbox } from './lightbox'
 import { escapeHtml } from './utils/text'
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -39,30 +39,6 @@ function isRetryableDbError(err: unknown): boolean {
 }
 
 let currentThemeMode: string = 'dark'
-
-/** Fullscreen lightbox visibility state */
-let fullscreenVisible = false
-
-/** Lightbox zoom/pan state */
-let lightboxZoom = 1
-let lightboxPanX = 0
-let lightboxPanY = 0
-
-/** Lightbox pan-drag state */
-interface LightboxDragState {
-  startX: number
-  startY: number
-  startPanX: number
-  startPanY: number
-}
-let lightboxDragState: LightboxDragState | null = null
-
-function resetLightboxState(): void {
-  lightboxZoom = 1
-  lightboxPanX = 0
-  lightboxPanY = 0
-  lightboxDragState = null
-}
 
 function getSettings() {
   return {
@@ -114,55 +90,6 @@ async function writeWidthToMacro(uuid: string, width: number): Promise<void> {
   } catch (err) {
     console.warn('Bermaid: failed to persist width to macro', err)
   }
-}
-
-/**
- * Show fullscreen lightbox for a rendered diagram
- */
-function showFullscreen(uuid: string): void {
-  const svg = svgCache.get(uuid)
-  if (!svg) return
-
-  resetLightboxState()
-  fullscreenVisible = true
-
-  logseq.provideUI({
-    key: 'bermaid-fullscreen',
-    path: 'body',
-    template: `
-      <div class="bermaid-lightbox">
-        <div class="bermaid-lightbox-backdrop" data-on-click="bermaidCloseFullscreen"></div>
-        <button class="bermaid-lightbox-close" data-on-click="bermaidCloseFullscreen" title="Close (Esc)">✕</button>
-        <div class="bermaid-zoom-controls">
-          <button class="bermaid-zoom-btn" data-on-click="bermaidZoomOut" title="Zoom out">−</button>
-          <span class="bermaid-zoom-level">100%</span>
-          <button class="bermaid-zoom-btn" data-on-click="bermaidZoomIn" title="Zoom in">+</button>
-          <button class="bermaid-zoom-btn" data-on-click="bermaidZoomReset" title="Reset zoom &amp; pan">⊙</button>
-        </div>
-        <div class="bermaid-lightbox-content" data-on-click="bermaidLightboxContentClick">
-          <div class="bermaid-lightbox-zoom-container" style="transform: scale(1) translate(0px, 0px); transform-origin: center center;">
-            ${svg}
-          </div>
-        </div>
-      </div>
-    `,
-  })
-}
-
-/**
- * Hide fullscreen lightbox
- */
-function hideFullscreen(): void {
-  if (!fullscreenVisible) return
-
-  fullscreenVisible = false
-  resetLightboxState()
-
-  logseq.provideUI({
-    key: 'bermaid-fullscreen',
-    path: 'body',
-    template: '',
-  })
 }
 
 /**
@@ -289,23 +216,6 @@ async function main() {
   // --- CSS ---
   logseq.provideStyle(BERMAID_STYLES)
 
-  // hostDoc is declared here (before provideModel) so that model handler
-  // closures can reference it even though it is resolved later in main().
-  let hostDoc: Document | null = null
-
-  /** Directly mutate the lightbox DOM to update zoom/pan without re-rendering */
-  function updateLightboxTransform(): void {
-    if (!hostDoc || !fullscreenVisible) return
-    const container = (hostDoc as Document).querySelector('.bermaid-lightbox-zoom-container') as HTMLElement | null
-    if (container) {
-      container.style.transform = `scale(${lightboxZoom}) translate(${lightboxPanX}px, ${lightboxPanY}px)`
-    }
-    const levelEl = (hostDoc as Document).querySelector('.bermaid-zoom-level') as HTMLElement | null
-    if (levelEl) {
-      levelEl.textContent = `${Math.round(lightboxZoom * 100)}%`
-    }
-  }
-
   // --- Event Handlers Model ---
   logseq.provideModel({
     async bermaidCopyImage(e: any) {
@@ -315,184 +225,30 @@ async function main() {
       }
     },
     async bermaidOpenFullscreen(e: any) {
-      const uuid = e.dataset?.blockUuid
-      if (!uuid) return
-      showFullscreen(uuid)
+      const svg = svgCache.get(e.dataset?.blockUuid)
+      if (svg) openLightbox(svg)
     },
     async bermaidWrapperClick(e: any) {
       const uuid = e?.dataset?.blockUuid
-      if (!uuid) return
+      const tracked = renderedSlots.get(uuid)
+      const svg = svgCache.get(uuid)
+      if (!uuid || !tracked || !svg) return
       // rect is only attached because the wrapper carries data-rect.
       const measured = Number(e?.rect?.width)
-      if (!Number.isFinite(measured) || measured <= 0) return
-      const tracked = renderedSlots.get(uuid)
-      const current = tracked?.width ?? DEFAULT_DIAGRAM_WIDTH
-      const width = Math.round(measured)
-      // A plain click on the wrapper (not a grip release) measures the width
-      // we rendered; nothing to do.
-      if (Math.abs(width - current) < 1) return
-      const clamped = Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, width))
-      console.log('Bermaid: resize commit', { uuid, current, measured, clamped })
-      const svg = svgCache.get(uuid)
-      if (tracked && svg) {
-        renderedSlots.set(uuid, { ...tracked, width: clamped })
-        renderSlot(uuid, tracked.slot, buildDiagramHtml(uuid, svg, clamped))
-      }
+      const width = Number.isFinite(measured) && measured > 0
+        ? Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, Math.round(measured)))
+        : tracked.width
+      // Always re-render: the native grip may have dragged the height (resize:
+      // both) even when the width ended up unchanged, and only a fresh
+      // template restores the aspect-ratio height.
+      renderedSlots.set(uuid, { ...tracked, width })
+      renderSlot(uuid, tracked.slot, buildDiagramHtml(uuid, svg, width))
+      if (width === tracked.width) return
       // Persist into the macro arg. Also re-fires the renderer, which is
       // harmless -- it lands on the same width we just rendered.
-      await writeWidthToMacro(uuid, clamped)
-    },
-    async bermaidCloseFullscreen(e: any) {
-      e?.stopPropagation?.()
-      hideFullscreen()
-    },
-    async bermaidLightboxContentClick(e: any) {
-      // Prevent clicks inside the content box from bubbling to the backdrop.
-      e?.stopPropagation?.()
-    },
-    async bermaidZoomIn(e: any) {
-      e?.stopPropagation?.()
-      lightboxZoom = Math.min(lightboxZoom * ZOOM_STEP, ZOOM_MAX)
-      updateLightboxTransform()
-    },
-    async bermaidZoomOut(e: any) {
-      e?.stopPropagation?.()
-      lightboxZoom = Math.max(lightboxZoom / ZOOM_STEP, ZOOM_MIN)
-      updateLightboxTransform()
-    },
-    async bermaidZoomReset(e: any) {
-      e?.stopPropagation?.()
-      lightboxZoom = 1
-      lightboxPanX = 0
-      lightboxPanY = 0
-      updateLightboxTransform()
+      await writeWidthToMacro(uuid, width)
     },
   })
-
-  // --- Host Scope Event Listeners for Resize/Zoom/Pan ---
-  let hostScope: unknown = null
-  try {
-    hostScope = await Promise.resolve(logseq.Experiments.ensureHostScope())
-  } catch (err) {
-    console.warn('Could not get host scope:', err)
-  }
-
-  // hostDoc declared above (before provideModel); resolve it here.
-  try {
-    // ensureHostScope() returns the host window proxy; .document is most reliable
-    type HostScopeShape = { document?: Document; window?: { document?: Document; top?: { document?: Document } } }
-    const hs = hostScope as HostScopeShape | null
-    hostDoc = hs?.document
-      ?? hs?.window?.document
-      ?? hs?.window?.top?.document
-      ?? null
-    if (!hostDoc) {
-      console.warn('Bermaid: Could not resolve host document')
-    }
-  } catch (err) {
-    console.warn('Bermaid: Could not access host document', err)
-  }
-
-  // Bind the lightbox listeners (pan, wheel-zoom, Esc) to every distinct
-  // document involved. These only work same-origin (sideloads); installed
-  // plugins cannot reach the host document, see CLAUDE.md "Plugin Origin Split".
-  // Diagram resize deliberately does NOT depend on any of this.
-  const targetDocs: Document[] = []
-  for (const d of [hostDoc, typeof document !== 'undefined' ? document : null]) {
-    if (d && !targetDocs.includes(d)) targetDocs.push(d)
-  }
-
-  if (targetDocs.length) {
-    // Primary document for querying lightbox elements; fall back across all docs.
-    const queryEl = <T extends Element>(sel: string): T | null => {
-      for (const d of targetDocs) {
-        const el = d.querySelector(sel) as T | null
-        if (el) return el
-      }
-      return null
-    }
-
-      const onMouseMove = (e: MouseEvent) => {
-      // Handle lightbox pan dragging
-      if (lightboxDragState) {
-        const dx = e.clientX - lightboxDragState.startX
-        const dy = e.clientY - lightboxDragState.startY
-        lightboxPanX = lightboxDragState.startPanX + dx / lightboxZoom
-        lightboxPanY = lightboxDragState.startPanY + dy / lightboxZoom
-        updateLightboxTransform()
-      }
-    }
-
-    // Mouse down on lightbox content starts a pan
-    const onMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      // Start lightbox pan when dragging on content (but not on buttons)
-      if (fullscreenVisible && target?.closest?.('.bermaid-lightbox-content') && !(target as HTMLElement).closest?.('button')) {
-        lightboxDragState = {
-          startX: e.clientX,
-          startY: e.clientY,
-          startPanX: lightboxPanX,
-          startPanY: lightboxPanY,
-        }
-        const contentEl = queryEl<HTMLElement>('.bermaid-lightbox-content')
-        if (contentEl) contentEl.classList.add('bermaid-panning')
-        e.preventDefault()
-      }
-
-    }
-
-    // Mouse up - finish lightbox pan
-    const onMouseUp = () => {
-      if (lightboxDragState) {
-        lightboxDragState = null
-        const contentEl = queryEl<HTMLElement>('.bermaid-lightbox-content')
-        if (contentEl) contentEl.classList.remove('bermaid-panning')
-      }
-    }
-
-    // Mouse wheel - zoom lightbox toward cursor
-    const onWheel = (e: WheelEvent) => {
-      if (!fullscreenVisible) return
-      const target = e.target as HTMLElement
-      if (!target?.closest?.('.bermaid-lightbox')) return
-      e.preventDefault()
-      const zoomFactor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP
-      const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, lightboxZoom * zoomFactor))
-      // Zoom toward cursor position relative to content center
-      const contentEl = queryEl<HTMLElement>('.bermaid-lightbox-content')
-      if (contentEl) {
-        const rect = contentEl.getBoundingClientRect()
-        const cx = rect.left + rect.width / 2
-        const cy = rect.top + rect.height / 2
-        lightboxPanX = lightboxPanX + (e.clientX - cx) * (1 / newZoom - 1 / lightboxZoom)
-        lightboxPanY = lightboxPanY + (e.clientY - cy) * (1 / newZoom - 1 / lightboxZoom)
-      }
-      lightboxZoom = newZoom
-      updateLightboxTransform()
-    }
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        hideFullscreen()
-      }
-    }
-
-    for (const d of targetDocs) {
-      d.addEventListener('mousemove', onMouseMove, true)
-      d.addEventListener('mousedown', onMouseDown, true)
-      d.addEventListener('mouseup', onMouseUp, true)
-      d.addEventListener('wheel', onWheel, { capture: true, passive: false })
-      d.addEventListener('keydown', onKeyDown, true)
-
-      offHooks.push(() => {
-        d.removeEventListener('mousemove', onMouseMove, true)
-        d.removeEventListener('mousedown', onMouseDown, true)
-        d.removeEventListener('mouseup', onMouseUp, true)
-        d.removeEventListener('wheel', onWheel, true)
-        d.removeEventListener('keydown', onKeyDown, true)
-      })
-    }
-  }
 
   // --- Theme mode detection ---
   const offThemeModeChanged = logseq.App.onThemeModeChanged(({ mode }) => {
@@ -541,7 +297,7 @@ async function main() {
   }
 
   logseq.beforeunload(async () => {
-    hideFullscreen()
+    closeLightbox()
     // Pending debounce timers outlive the hooks below; without this they fire
     // against a torn-down plugin and call provideUI on a dead slot.
     for (const timer of rerenderTimers.values()) {

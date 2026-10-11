@@ -70,7 +70,7 @@ These skills are available and relevant to this project:
 - **`onMacroRendererSlotted` hook** — core rendering hook (see Data Flow below)
 - **`onThemeModeChanged` hook** — updates `currentThemeMode` and re-renders all tracked diagrams with the new theme
 - **`DB.onChanged` subscription** — live re-render when a tracked macro or its source child is edited; debounced per macro (~350 ms) via `scheduleRerender()` → `rerenderTrackedDiagram()`. Holds the last good render rather than flashing an error on transient invalid syntax mid-typing
-- **Host-scope DOM events** — `mousemove`, `mousedown`, `mouseup`, `wheel`, `keydown` for lightbox pan, zoom and Esc. Bound to every distinct document (host scope + plugin document, de-duplicated). Same-origin only; resize deliberately does not use them
+- **No host-document listeners.** Nothing in the plugin touches the host DOM any more: resize is a native CSS grip, the lightbox lives in the plugin's own iframe. The only `ensureHostScope()` call left is in `copyImageToClipboard()`, for a secure-context clipboard.
 
 ### Data Flow for Diagram Rendering
 
@@ -86,15 +86,17 @@ These skills are available and relevant to this project:
   → provideUI() via buildDiagramHtml() → CSS-resizable wrapper (data-rect click commit) + SVG container + copy button + lightbox trigger
 ````
 
-### Lightbox (Zoom & Pan)
+### Lightbox (`src/lightbox.ts`)
 
-`bermaidOpenFullscreen(uuid)` opens a host-scope overlay on top of the Logseq window:
+`bermaidOpenFullscreen` → `openLightbox(svg)`. The viewer is **PhotoSwipe 5**, the same library Logseq uses for its own image previews (`frontend.extensions.lightbox`), so zoom, pan, Esc and backdrop-close behave like native images.
 
-- **Overlay** — `.bermaid-lightbox-backdrop` covers the full viewport; click backdrop or X button to close (also Esc key)
-- **Zoom** — mouse-wheel listener (`capture: true, passive: false`) zooms toward the cursor using pan adjustment: `newPan = oldPan + cursorOffset * (1/newZoom - 1/oldZoom)`; range 12.5-800 %
-- **Pan** — mousedown on `.bermaid-lightbox-content` (outside control buttons) starts a drag; mousemove computes delta relative to current zoom; mouseup releases
-- **Zoom controls pill** — fixed bottom-centre bar with `-` / `+` / reset buttons and a live zoom label updated by `updateLightboxTransform()` (direct DOM mutation, no full re-render)
-- **State** — `lightboxZoom`, `lightboxPanX/Y`, `lightboxDragging` reset on every open and close
+- **Where it lives** — in the plugin's **own iframe**, shown as the main UI (`setMainUIInlineStyle` fixed full-window + `showMainUI`), never injected into the host body. Installed plugins cannot reach the host document and the bridge forwards no mouse, wheel or key identity, so a host-injected overlay could never zoom, pan or close on Esc there. Inside our frame every event is ours.
+- **Source** — the cached SVG as a `data:image/svg+xml` URI; intrinsic size from the SVG's `width`/`height` attributes, else its `viewBox` (`svgSize()`).
+- **Zoom levels** — `fit` initially, 2× fit on the zoom button / image click, 8× fit max. PhotoSwipe's default secondary level is the image's natural size, which for a vector that already fits would leave the zoom button doing nothing.
+- **Opens with no animation, on purpose.** A click during PhotoSwipe's opening fade (zoom button, the image) interrupts the opener; it never reaches `isOpen`, and from then on close and Esc are silently ignored — a fullscreen overlay the user cannot leave. `showHideAnimationType: 'none'` removes the window. `closeLightbox()` also destroys an instance that never finished opening rather than calling `close()` on it.
+- **Opens only once the frame is displayed.** `showMainUI` is an RPC; until the host adds its `visible` class the iframe is `display:none` with a 0×0 viewport, and an image PhotoSwipe starts loading there ends up broken (`complete`, `naturalWidth` 0). `openLightbox` polls `innerWidth` with a timer (rAF does not run in a hidden frame) before `loadAndOpen`.
+- **Hides the frame on `destroy`, not `close`** — `close` fires at the start of the teardown; hiding the iframe then would stop its animation frames and leave PhotoSwipe half-open under the next click.
+- E2E test: `node scripts/e2e/lightbox.mjs --port <cdp port> --uuid <macro block uuid>`. It evaluates inside the plugin iframe through `scripts/e2e/plugin-frame.mjs` (raw CDP; the cross-origin iframe is a separate target that Playwright does not list as a frame) and asserts open, Esc, zoom, PhotoSwipe's `opener.isOpen`, and close.
 
 ### Resize Mechanism
 
@@ -139,11 +141,12 @@ All theme names are defined in `src/constants.ts`.
 
 | File                         | Purpose                                                                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/index.ts`               | Plugin entry — settings, hooks, event handlers, lightbox, resize, slash command                                                      |
+| `src/index.ts`               | Plugin entry — settings, hooks, event handlers, resize commit, slash command                                                        |
+| `src/lightbox.ts`            | PhotoSwipe viewer in the plugin's own iframe (main UI); see Lightbox                                                                |
 | `src/render.ts`              | Mermaid render pipeline — lazy-loads `beautiful-mermaid`, builds options, trims SVG, copy-to-PNG                                     |
 | `src/cache.ts`               | `CappedMap` LRU + the two cache instances (`svgCache`, `renderedSlots`) and the `RenderedSlot` type                                  |
 | `src/constants.ts`           | Theme choices, auto-theme mapping, default width (250px)                                                                             |
-| `src/styles.ts`              | CSS injected into Logseq; includes lightbox, zoom controls, the native resize grip                                                   |
+| `src/styles.ts`              | CSS injected into Logseq: wrapper, native resize grip, copy button                                                                  |
 | `src/utils/svg.ts`           | SVG to PNG Blob conversion                                                                                                           |
 | `src/utils/text.ts`          | `escapeHtml()` for safe error message display                                                                                        |
 | `vite.config.ts`             | Vite config; terser minification, no sourcemaps; dev server on port 8080                                                             |
@@ -151,6 +154,8 @@ All theme names are defined in `src/constants.ts`.
 | `icon.svg` / `icon-alt.svg`  | Plugin icons; `icon.svg` is referenced by `package.json` `logseq.icon`                                                               |
 | `scripts/test-insert.js`     | Playwright-cli eval snippet for manual block-insert smoke tests                                                                      |
 | `scripts/e2e/resize.mjs`     | E2E drag-to-resize test against a running Logseq instance over CDP; red/green gate for the installed (cross-origin) path             |
+| `scripts/e2e/lightbox.mjs`   | E2E lightbox test (open, Esc, zoom, close) from the installed path                                                                   |
+| `scripts/e2e/plugin-frame.mjs` | Raw-CDP helper to evaluate inside the cross-origin plugin iframe (Node's built-in WebSocket)                                       |
 | `docs/`                      | Internal reference docs (`REQUIREMENTS.md`, `MARKETPLACE_SUBMISSION.md`)                                                             |
 
 ### Build
@@ -177,7 +182,7 @@ Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packag
 - **`provideUI` template is a string** — no JSX; HTML must be a template literal. Use `data-on-click` attributes for event handlers registered via `provideModel()`.
 - **Renderer slot `display: inline-flex`** — SVGs and large content need `width: 100%` CSS override to fill the slot.
 - **Macro args are always strings** — `payload.arguments` hands back strings even for numeric args. Always coerce with `Number()` and validate with `Number.isFinite()` before use; see `parseWidthArg()`.
-- **Host-doc access silently no-ops in sandboxed installs** — marketplace installs load the plugin in a cross-origin iframe, so `logseq.Experiments.ensureHostScope()` throws a `SecurityError` and `window.top.document` is unreachable. Any `if (hostDoc) { ... }` block then becomes a silent no-op, taking every host-scope listener with it — this broke drag-to-resize, lightbox pan, wheel-zoom, zoom buttons and Esc-to-close from v0.2.x onward without a single error surfacing. Resize was fixed in v0.5.0 by not using host listeners at all (native CSS `resize` + `data-rect` click, see Resize Mechanism); the lightbox interactions are still host-document-bound. See the shadow-mode entry below for the approach that does *not* work.
+- **Host-doc access silently no-ops in sandboxed installs** — marketplace installs load the plugin in a cross-origin iframe, so `logseq.Experiments.ensureHostScope()` throws a `SecurityError` and `window.top.document` is unreachable. Any `if (hostDoc) { ... }` block then becomes a silent no-op, taking every host-scope listener with it — this broke drag-to-resize, lightbox pan, wheel-zoom, zoom buttons and Esc-to-close from v0.2.x onward without a single error surfacing. Fixed in v0.5.0 by not using host listeners at all: resize is a native CSS `resize` grip committed through a `data-rect` click, and the lightbox moved into the plugin's own iframe (see Lightbox). Rule going forward: **never put interaction in the host document**; put it in our iframe (main UI) or in something the browser handles natively. See the shadow-mode entry below for the approach that does *not* work.
 - **Do NOT set `"mode": "shadow"` in the manifest** — it looks like the fix for the host-doc problem above, and it is not. v0.4.0 shipped it and the plugin failed to load entirely, on *every* install type (sideload included), with `TypeError: gs is not a function`. Logseq's shadow path (`LSPluginLocal._setupShadowSandbox` → `LSPluginShadow.load`) destructures `const {importHTML, createSandboxContainer} = window.QSandbox || {}`, but no shipped Logseq build defines `window.QSandbox` — `qiankun` is not bundled and no script tag provides it. The `|| {}` makes it degrade to `undefined` functions rather than a clear error, and `this.shadow ? _setupShadowSandbox() : _setupIframeSandbox()` is a hard branch with **no fallback**, so choosing shadow means the plugin never registers. Reverted in v0.4.1. To check any future build: `strings app.asar | grep -c QSandbox` — you need an *assignment*, not just the two consumer destructures.
 
 ### Plugin Origin Split — read this before touching any interaction code
