@@ -18,9 +18,12 @@ npm run build     # Production build → dist/ (terser minification, no sourcema
 npm run watch     # Rebuild dist/ on file changes (no HTTP server)
 npm run serve     # Dev HTTP server at http://localhost:8080 (no rebuild)
 npm run typecheck # TypeScript type check only
+npm test          # Unit tests (vitest): macro parsing, fence stripping, SVG sizing, CappedMap
 ```
 
 ## Testing
+
+Unit tests (`npm test`, vitest) cover the pure helpers in `src/macro.ts`, `src/cache.ts` and `src/utils/svg.ts`; CI runs them. Everything that needs a Logseq host is an e2e script under `scripts/e2e/` and is run by hand from an installed copy (see the test loop below).
 
 The Logseq web app runs at **[http://localhost:3001](http://localhost:3001)**. If it's not running, start it with:
 
@@ -142,6 +145,7 @@ All theme names are defined in `src/constants.ts`.
 | File                         | Purpose                                                                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/index.ts`               | Plugin entry — settings, hooks, event handlers, resize commit, slash command                                                        |
+| `src/macro.ts`               | Pure helpers: `parseWidthArg`, `extractMermaidSyntax`, `getBlockText`, `BERMAID_MACRO_RE`; unit-tested in `src/macro.test.ts`      |
 | `src/lightbox.ts`            | PhotoSwipe viewer in the plugin's own iframe (main UI); see Lightbox                                                                |
 | `src/render.ts`              | Mermaid render pipeline — lazy-loads `beautiful-mermaid`, builds options, trims SVG, copy-to-PNG                                     |
 | `src/cache.ts`               | `CappedMap` LRU + the two cache instances (`svgCache`, `renderedSlots`) and the `RenderedSlot` type                                  |
@@ -151,7 +155,7 @@ All theme names are defined in `src/constants.ts`.
 | `src/utils/text.ts`          | `escapeHtml()` for safe error message display                                                                                        |
 | `vite.config.ts`             | Vite config; terser minification, no sourcemaps; dev server on port 8080                                                             |
 | `vite-logseq-safe-plugin.ts` | Custom Vite plugin replacing `vite-plugin-logseq`; handles dev-server CORS, HMR safety, and writes `dist/index.html` on watch builds |
-| `icon.svg` / `icon-alt.svg`  | Plugin icons; `icon.svg` is referenced by `package.json` `logseq.icon`                                                               |
+| `icon.svg`                   | Plugin icon, referenced by `package.json` `logseq.icon`                                                                            |
 | `scripts/e2e/resize.mjs`     | E2E drag-to-resize test against a running Logseq instance over CDP; red/green gate for the installed (cross-origin) path             |
 | `scripts/e2e/lightbox.mjs`   | E2E lightbox test (open, Esc, zoom, close) from the installed path                                                                   |
 | `scripts/e2e/plugin-frame.mjs` | Raw-CDP helper to evaluate inside the cross-origin plugin iframe (Node's built-in WebSocket)                                       |
@@ -250,6 +254,6 @@ Via `vite`:
 - `nanoid: ^3.3.18` — clears GHSA-28wg-ghj8-5hjv and GHSA-2v37-7h3g-55p8 (infinite loop on zero/negative size). Pulled in by `postcss`, which constrains it to `^3`, so **stay in the 3.x line** — overriding to 5.x/6.x would break postcss.
 - `source-map-js: ^1.2.2` — clears GHSA-68fv-2mgg-jv7q (event-loop DoS through indexed source-map section offsets). Pulled in by `postcss`, which resolves 1.2.1 on its own.
 
-`vite` itself is pinned to `^7.3.6` (not 7.3.2) to clear GHSA-fx2h-pf6j-xcff and GHSA-v6wh-96g9-6wx3. Deliberately staying in-major: there is no test framework here today, but a future `vitest` would peer-pin the Vite major, and vite 8 also risks the custom `vite-logseq-safe-plugin.ts`.
+`vite` itself is pinned to `^7.3.6` (not 7.3.2) to clear GHSA-fx2h-pf6j-xcff and GHSA-v6wh-96g9-6wx3. Deliberately staying in-major: `vitest` peer-pins the Vite major (5.x accepts `^6.4 || ^7 || ^8`), and vite 8 also risks the custom `vite-logseq-safe-plugin.ts`. `vitest` is `^5.0.3` because every 3.x/4.x release carries `tinypool` (GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr) and `@vitest/mocker` (GHSA-82fw-gwwq-j7x9) advisories whose only fix is the 5.0.3 major; `npm audit` lit up the moment 3.2.7 was installed.
 
 `npm audit` should report 0 vulnerabilities. When it doesn't, verify each proposed target version actually exists (`npm view <pkg> versions --json | tail`) before writing an override. If a future `@logseq/libs` upgrade requires older majors, drop or relax the relevant override.

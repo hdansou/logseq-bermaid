@@ -17,9 +17,9 @@ Ran on `feat/cross-origin-resize` before cutting v0.5.0. Baseline was green (typ
 
 **Deferred (need an explicit yes).**
 
-- [ ] Delete `icon-alt.svg` (unreferenced) and `scripts/test-insert.js` (superseded by `scripts/e2e/`), with their CLAUDE.md rows.
-- [ ] Local cleanup: `git worktree prune` (stale `pr-1` worktree in a scratchpad), delete branches `pr-1` and `chore/prod-readiness-top3`, delete `../logseq-bermaid-pr1`.
-- [ ] **No unit test framework.** `extractMermaidSyntax()`, `parseWidthArg()`, `svgSize()` and `CappedMap` are pure and untested; vitest 3 fits Vite 7. CI gates only typecheck + build; the e2e scripts under `scripts/e2e/` need a live Logseq and stay manual.
+- [x] Deleted `icon-alt.svg` and `scripts/test-insert.js` with their CLAUDE.md rows (same day).
+- [x] Local cleanup done: worktree pruned, branches `pr-1` / `chore/prod-readiness-top3` deleted, `../logseq-bermaid-pr1` removed (same day).
+- [x] **Unit tests.** vitest 3 + jsdom; the pure helpers moved to `src/macro.ts` and are covered with `src/cache.ts` and `src/utils/svg.ts`. CI runs `npm test`. The e2e scripts under `scripts/e2e/` still need a live Logseq and stay manual.
 - [ ] Optional `packageManager` field for Corepack.
 
 **Resize + lightbox outcome (closes the 08-31 investigation).** The slider could not be grabbed cross-origin at all. What shipped: a native CSS `resize: both` grip committed through a `data-rect` click, and the lightbox moved into the plugin's own iframe as PhotoSwipe. Both verified red→green from `~/.logseq/plugins` with `scripts/e2e/resize.mjs` and `scripts/e2e/lightbox.mjs`. Details and the three PhotoSwipe-in-an-iframe traps are in CLAUDE.md.

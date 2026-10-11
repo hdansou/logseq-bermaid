@@ -1,9 +1,7 @@
 import '@logseq/libs'
 import type { BlockEntity, BlockUUIDTuple } from '@logseq/libs/dist/LSPlugin'
-import {
-  DEFAULT_DIAGRAM_WIDTH, THEME_CHOICES,
-  MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH,
-} from './constants'
+import { THEME_CHOICES, MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH } from './constants'
+import { parseWidthArg, extractMermaidSyntax, getBlockText, BERMAID_MACRO_RE } from './macro'
 import { svgCache, renderedSlots } from './cache'
 import { renderDiagram, copyImageToClipboard, type RenderConfig } from './render'
 import { BERMAID_STYLES } from './styles'
@@ -67,27 +65,10 @@ function getRenderConfig(): RenderConfig {
   return { themeMode: currentThemeMode, theme, transparentBg }
 }
 
-/** Normalize DB/file-graph block content field */
-function getBlockText(block: BlockEntity | null | undefined): string {
-  return block?.content || block?.title || ''
-}
-
 /** Inject plugin UI into a renderer slot */
 function renderSlot(blockUuid: string, slot: string, template: string): void {
   logseq.provideUI({ key: `bermaid-${blockUuid}`, slot, template })
 }
-
-/** Parse the second positional macro arg as the diagram width. Clamped, falls back to default. */
-function parseWidthArg(args: ReadonlyArray<string>): number {
-  const raw = args[1]
-  if (raw === undefined || raw === null || raw === '') return DEFAULT_DIAGRAM_WIDTH
-  const n = Number(String(raw).trim())
-  if (!Number.isFinite(n)) return DEFAULT_DIAGRAM_WIDTH
-  return Math.max(MIN_DIAGRAM_WIDTH, Math.min(MAX_DIAGRAM_WIDTH, n))
-}
-
-/** Match a {{renderer :bermaid[, ...]}} macro call. Tolerant to whitespace around args. */
-const BERMAID_MACRO_RE = /\{\{renderer\s+:bermaid(?:\s*,[^}]*)?\s*\}\}/
 
 /** Persist width by rewriting the parent block's macro line. */
 async function writeWidthToMacro(uuid: string, width: number): Promise<void> {
@@ -105,33 +86,6 @@ async function writeWidthToMacro(uuid: string, width: number): Promise<void> {
   } catch (err) {
     console.warn('Bermaid: failed to persist width to macro', err)
   }
-}
-
-/**
- * Join child-block text into Mermaid syntax and strip a wrapping ```mermaid ... ``` fence.
- * Children may be BlockEntity or ['uuid', BlockUUID] tuples; only the entity form has text.
- */
-function extractMermaidSyntax(children: Array<BlockEntity | BlockUUIDTuple>): string {
-  const mermaidLines: string[] = []
-  for (const child of children) {
-    if (Array.isArray(child)) continue
-    const text = getBlockText(child)
-    if (text) mermaidLines.push(text)
-  }
-
-  let mermaidSyntax = mermaidLines.join('\n').trim()
-
-  // Strip code fence if wrapped in ```mermaid ... ```
-  // Line-based parser handles unusual whitespace better than a single regex.
-  const lines = mermaidSyntax.split('\n')
-  if (lines.length >= 2) {
-    const first = lines[0].trimEnd()
-    const last = lines[lines.length - 1].trimEnd()
-    if (/^```(?:mermaid)?\s*$/.test(first) && /^```\s*$/.test(last)) {
-      mermaidSyntax = lines.slice(1, -1).join('\n').trim()
-    }
-  }
-  return mermaidSyntax
 }
 
 /**
