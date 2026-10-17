@@ -1,8 +1,8 @@
-# Bermaid - Beautiful Mermaid Diagrams for Logseq
+# Bermaid - Better Mermaid Diagrams for Logseq
 
 ## Overview
 
-Bermaid is a Logseq plugin that renders mermaid diagrams using the [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) library, providing beautiful SVG output with built-in themes and zero DOM dependencies.
+Bermaid (**Better Mermaid**) is a Logseq plugin that renders Mermaid diagrams as themed SVG using [Pele](https://github.com/obsidianmd/pele), a fast, lightweight Mermaid renderer with no runtime dependencies that supports every diagram type built into Mermaid 12.1. Up to v0.5 the engine was [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid); its color themes carry over.
 
 ## Functional Requirements
 
@@ -18,48 +18,43 @@ Bermaid is a Logseq plugin that renders mermaid diagrams using the [beautiful-me
 - Register a `/bermaid` slash command in Logseq's editor
 - When invoked, it inserts:
   - A `{{renderer :bermaid}}` macro in the current block
-  - A child block containing a default flowchart template:
+  - An empty ```` ```mermaid ```` code block as its child
+- The code block must appear within 400 ms of Enter (median; `scripts/e2e/slash-latency.mjs`). No fixed waits: the hidden plugin iframe runs `setTimeout` at 1 Hz, so any wait goes through the worker clock (`src/utils/clock.ts`).
+- Until the child has Mermaid in it, the slot shows a neutral hint, not an error, and the slot is tracked so the diagram appears as soon as the code block is left (Esc or blur): within 700 ms (median).
 
-    ```mermaid
-    graph TD
-        A[Start] --> B{Decision}
-        B -->|Yes| C[Action]
-        B -->|No| D[End]
-    ```
+### FR-2b: Render an existing code block
 
-- In DB graphs only: set `display-type: "code"` and `lang: "mermaid"` on the child block via `upsertBlockProperty`; skip those calls in file-based graphs
+- A block context-menu item, **Render as Bermaid diagram**, turns a Mermaid code block into a diagram: it inserts `{{renderer :bermaid}}` just above the block and moves the code block under it, without rewriting the code (indentation-sensitive types such as kanban and mindmap survive).
+- Accepts a DB-graph code block with `lang` = `mermaid`, a file-graph block opening with a ```` ```mermaid ```` fence, and a code block with **no language** whose content Pele's `detectType` recognises (Logseq's `/code` sets no language).
+- Leaves anything else alone with a message ("not a mermaid code block"); on a code block already under a Bermaid macro it adds nothing ("already a diagram").
+- The diagram must be on screen within 1 s of the click (`scripts/e2e/convert.mjs`).
 
 ### FR-3: Theme Support
 
-- Auto-detect Logseq's light/dark mode and select an appropriate beautiful-mermaid theme
-- Provide a settings dropdown to choose from beautiful-mermaid's 15 built-in themes:
-  `auto`, `default`, `tokyo-night`, `catppuccin`, `nord`, `dracula`, etc.
+- Auto-detect Logseq's light/dark mode: `auto` maps to `github-light` / `tokyo-night`
+- Provide a settings dropdown with `auto` and 14 named themes (palettes carried over from beautiful-mermaid): `zinc-dark`, `tokyo-night`, `tokyo-night-storm`, `tokyo-night-light`, `catppuccin-mocha`, `catppuccin-latte`, `nord`, `nord-light`, `dracula`, `github-light`, `github-dark`, `solarized-light`, `solarized-dark`, `one-dark`
+- Colors are baked into each SVG as `--pele-*` variables, so the lightbox and copy-to-PNG (which load the SVG as an image) keep them
 - Re-render diagrams when Logseq's theme mode changes
 
 ### FR-4: Plugin Settings
 
 | Setting         | Type          | Default | Description                        |
 | --------------- | ------------- | ------- | ---------------------------------- |
-| `theme`         | enum (select) | `auto`  | beautiful-mermaid theme name       |
+| `theme`         | enum (select) | `auto`  | Diagram color theme                |
 | `transparentBg` | boolean       | `true`  | Render with transparent background |
 
 ### FR-5: Error Handling
 
-- Display a user-friendly error message in the renderer slot when:
-  - Mermaid syntax is invalid
-  - No child block content is found after a 1.5 s retry window
-  - The rendering library encounters an error
+- Display a user-friendly error message in the renderer slot when Mermaid syntax is invalid or the renderer fails
+- An empty diagram (no child, or an empty code block) shows a neutral hint instead of an error
+- While a diagram is being edited, invalid intermediate syntax keeps the last good render
 - Surface non-retryable slash-command failures as a user-visible toast instead of a silent warning
 
 ### FR-6: Supported Diagram Types
 
-All diagram types supported by beautiful-mermaid:
+Every diagram type built into Mermaid 12.1, as supported by Pele: flowchart, sequence, class, state, ER, Gantt, git graph, pie, mindmap, kanban, timeline, user journey, quadrant chart, XY chart, requirement, sankey, architecture, C4, block, agentflow, railroad, tree view, Cynefin, Wardley map, event modeling, use case, Venn, Ishikawa, packet, radar, treemap, swimlane. ZenUML and external Mermaid plugins are not supported.
 
-- Flowcharts
-- State diagrams
-- Sequence diagrams
-- Class diagrams
-- ER diagrams
+- Diagrams are shown at their natural size, shrinking to fit the wrapper but never scaled up (`scripts/e2e/sizing.mjs`).
 
 ### FR-7: Copy as PNG
 
@@ -93,6 +88,7 @@ All diagram types supported by beautiful-mermaid:
 
 - Diagrams should render within 500ms for typical flowcharts
 - Use async rendering to avoid blocking the Logseq UI thread
+- Load the renderer lazily and per diagram type (`pele/lazy`): the core is ~37 KB, each type's chunk 1–45 KB
 
 ### NFR-2: Compatibility
 
@@ -120,17 +116,21 @@ This renders as an inline SVG flowchart in the Logseq page.
 ## Technical Architecture
 
 - **SDK**: `@logseq/libs` ≥ 0.3.4 — Logseq Plugin SDK (manifest `minSDKVersion` must match the floor in `package.json`). Minimum version is enforced at compile time by `src/__sdk_guard__.ts`, which references an API introduced in 0.3.x; `npm run typecheck` fails on any downgrade.
-- **Renderer**: `beautiful-mermaid` — SVG rendering engine (pinned version)
+- **Renderer**: `pele` — SVG rendering engine, pinned to an exact version; every upgrade is a release gate (Mermaid docs corpus plus a visual review per type)
+- **Themes**: `src/theme.ts` — palettes, `auto` resolution, `applyTheme()`
+- **Timers**: `src/utils/clock.ts` — worker-backed `sleep` / `delay`, because the hidden plugin iframe throttles `setTimeout` to 1 Hz
 - **Bundler**: Vite — dev server + production build
 - **Entry**: `onMacroRendererSlotted` hook intercepts `{{renderer :bermaid}}` macros
 - **UI**: `provideUI()` injects a CSS-resizable wrapper + SVG + copy button + lightbox trigger into the renderer slot
 - **Lightbox**: `src/lightbox.ts`, PhotoSwipe 5 in the plugin's main UI iframe
-- **Styling**: `provideStyle()` injects CSS for the wrapper, resize grip, copy button, and error states; PhotoSwipe's CSS is bundled into the plugin frame
+- **Styling**: `provideStyle()` injects CSS for the wrapper, resize grip, copy button, hint and error states; PhotoSwipe's CSS is bundled into the plugin frame
 - **Host scope**: none. Nothing depends on `window.top.document`; the only `ensureHostScope()` call is the clipboard fallback
 
 ## Testing Strategy
 
-End-to-end tests using Playwright against Logseq at localhost:3001:
+Unit tests (`npm test`, vitest) for the pure helpers: macro parsing, fence stripping, code-block detection, themes, the worker clock, SVG sizing, `CappedMap`.
+
+End-to-end scripts under `scripts/e2e/`, run against an **installed** copy in a Logseq instance with a CDP port:
 
 1. Plugin loads successfully
 2. Slash command inserts macro + child block (in both DB and file graphs)
@@ -140,3 +140,6 @@ End-to-end tests using Playwright against Logseq at localhost:3001:
 6. Hover shows copy button; click copies PNG to clipboard
 7. Drag the resize grip changes diagram width; the macro arg is rewritten and the aspect ratio is kept (`scripts/e2e/resize.mjs`, run from an installed copy)
 8. Click diagram opens the lightbox in the plugin frame; Esc / ✕ / backdrop closes it; zoom button and mouse wheel zoom (`scripts/e2e/lightbox.mjs`, run from an installed copy)
+9. Diagrams are never drawn larger than their natural size (`scripts/e2e/sizing.mjs`)
+10. `/bermaid` timing and the path to a first diagram (`scripts/e2e/slash-latency.mjs`)
+11. Render as Bermaid diagram, including a `/code` block with no language (`scripts/e2e/convert.mjs`)
