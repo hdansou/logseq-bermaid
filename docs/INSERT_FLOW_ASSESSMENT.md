@@ -50,7 +50,7 @@ Each prototype ran its SDK sequence inside the installed iframe with no timers, 
 | Cursor ends in | nowhere: `editBlock` on a code block does not focus its CodeMirror | nowhere | **inside the fence** (raw editor, caret at offset 33) | - |
 | Typing multi-line Mermaid | click into the code block first, then normal | same as A | **breaks**: Enter splits the block (and carries the closing fence away) | - |
 | Pasting Mermaid | fine | fine | fine | - |
-| Live preview while typing | yes (code block edits fire `DB.onChanged`) | yes | no, the slot is hidden while the block is in the raw editor | - |
+| Live preview while typing | no: the code editor writes to the DB only when left (see §6) | same as A | no, the slot is hidden while the block is in the raw editor | - |
 | Existing diagrams | unchanged | unchanged | renderer must also read its own block; both forms then coexist | - |
 | Side effects seen | - | a "Block not found" flash from the removed block's slot | - | - |
 
@@ -62,7 +62,7 @@ Not prototyped, for completeness: **E. "Render as diagram" on an existing code b
 
 ## 4. Recommendation
 
-1. **Fix the clock first (applies to every option).** One worker-backed `sleep()` used by `retry`, `scheduleRerender` and the lightbox poll. Measured: 100 ms means ~102 ms again. Live preview while typing drops from ~1 s to the intended 350 ms.
+1. **Fix the clock first (applies to every option).** One worker-backed `sleep()` used by `retry`, `scheduleRerender` and the lightbox poll. Measured: 100 ms means ~102 ms again. The re-render debounce drops from ~1 s to the intended 350 ms.
 2. **Ship A.** Drop the fixed sleeps from `insertBermaidTemplate` (keep `retry` on DB errors, now on the worker clock). Expected: code block visible in about 0.25 s instead of 2.4–3.1 s. Replace the renderer's child poll with the existing `DB.onChanged` path, and show a neutral "Type Mermaid in the code block below" hint instead of the red "Child block is empty" error. No change for existing diagrams.
 3. **Decide on E as a follow-up.** It removes the remaining "click into the code block" step for people who start from a code block, and it pairs well with paste. C is not recommended: it only works when pasting.
 
@@ -71,3 +71,37 @@ The remaining friction after A, one click into the code block, cannot be removed
 ## 5. Gate for the change
 
 `scripts/e2e/slash-latency.mjs` is the before/after measurement. Target for A: code block in DOM < 400 ms (median), no red error state, zero DB errors over 5 runs. Then `resize.mjs`, `lightbox.mjs` and `sizing.mjs` must stay green.
+
+## 6. Implemented: worker clock + A (2026-10-17)
+
+### Changes
+
+| File | Change |
+| ---- | ------ |
+| `src/utils/clock.ts` | New. `sleep()` / `delay()` (cancellable) on one lazily created Blob-URL worker; `setTimeout` fallback where `Worker` is missing |
+| `src/utils/clock.test.ts` | New, 5 tests: waits run on the worker, concurrent ids route, cancel, lazy single worker, fallback |
+| `src/index.ts` | `retry` and `scheduleRerender` use the worker clock. `insertBermaidTemplate` loses `sleep(100)`, `sleep(100)`, `sleep(300)` and the re-fetch. Renderer: one `getBlock` (retried only if the block itself is missing), slot tracked **before** rendering, neutral `.bermaid-hint` instead of the red "Child block is empty"/"No child block" errors. Theme re-render skips slots with no source yet |
+| `src/lightbox.ts` | Open poll on the worker clock (16 ms, was ~1 s per tick while hidden) |
+| `src/styles.ts` | `.bermaid-hint` shares the loading style |
+| `scripts/e2e/slash-latency.mjs` | Now a gate: also clicks into the code block, types, presses Escape, times Escape → diagram; fails on thresholds or any red error |
+
+### Finding: no preview while typing, from any plugin
+
+Logseq's code-block editor (CodeMirror) writes the block to the DB only when it is left (Escape or blur). Measured: 3 s after typing, still focused, `get_block(child).title === ""`; after Escape the diagram showed in 448 ms. So the user-visible latency to measure is Escape → diagram.
+
+### Bug fixed along the way (also on main)
+
+After `/bermaid`, the slot showed "Child block is empty" and was **not tracked**, so `DB.onChanged` ignored the child's edits: the diagram never appeared until the page was reloaded. Tracking the slot before rendering fixes it (and also lets a diagram whose first source was invalid recover once fixed).
+
+### Gate results
+
+| `slash-latency.mjs` (median) | Before (previous commit, 3 runs) | After (5 runs) |
+| ---------------------------- | -------------------------------- | -------------- |
+| code block in DOM | 2335 ms | **179 ms** |
+| slot final state | red "Child block is empty" | neutral hint at 344 ms |
+| diagram after leaving the code block | **never** (5 s timeout) | **425 ms** (411–433) |
+| verdict | FAIL ×3 | PASS ×4 |
+
+Regression gates on the new build: `sizing.mjs` 24/24 (8 diagrams), `resize.mjs` 6/6 at dx +120 and −60, `lightbox.mjs` 7/7, `npm test` 33/33.
+
+Still open: the cursor ends nowhere after `/bermaid`; one click into the code block remains (not fixable from an installed plugin). Option E is the candidate follow-up.

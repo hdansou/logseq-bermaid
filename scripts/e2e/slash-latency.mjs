@@ -1,6 +1,7 @@
 // E2E: how long /bermaid takes, step by step, as a user experiences it.
 //
 //   node scripts/e2e/slash-latency.mjs --port 9345 [--runs 5] [--page "Slash latency"] [--command bermaid]
+//                                       [--max-child-ms 400] [--max-preview-ms 700]
 //
 // Preconditions: a Logseq instance with --remote-debugging-port=<port>, the
 // plugin loaded from ~/.logseq/plugins/logseq-bermaid, on a THROWAWAY graph
@@ -13,7 +14,12 @@
 //   - every distinct state of the block's renderer slot (loading / error / diagram),
 //   - when the child code block appears,
 //   - where the cursor is once things settle (the user's next keystroke goes there).
-// Prints one timeline per run and a median summary. Exit code 0 unless a run times out.
+// Then the user's next step: click into the code block, type a diagram, press Escape,
+// and time from Escape until the diagram is on screen. (Logseq's code editor writes
+// to the DB only when it is left, so nothing can preview mid-typing.)
+// Prints one timeline per run and a median summary.
+// Exit code 1 if a run times out, the median code-block time exceeds --max-child-ms,
+// the median preview time exceeds --max-preview-ms, or the slot ever shows a red error.
 import { createRequire } from "node:module";
 const require = createRequire("/Users/dzu/Projects/src/github.com/logseq/package.json");
 const { chromium } = require("playwright");
@@ -23,6 +29,8 @@ const port = arg("--port", "9345");
 const runs = Number(arg("--runs", "5"));
 const pageName = arg("--page", "Slash latency");
 const command = arg("--command", "bermaid");
+const maxChildMs = Number(arg("--max-child-ms", "400"));
+const maxPreviewMs = Number(arg("--max-preview-ms", "700"));
 // Other installed plugins poll the host API (check_editing / get_current_block every 500 ms),
 // and the host itself calls should_exec_plugin_hook; keep only calls that drive the block.
 const tracked = new Set(["get_block", "exit_editing_mode", "update_block", "insert_block", "insert_batch_block", "edit_block", "remove_block"]);
@@ -73,6 +81,7 @@ for (let r = 0; r < runs; r++) {
     const look = () => {
       const b = block(); if (!b) return;
       const s = b.querySelector(".bermaid-wrapper") ? "diagram"
+        : b.querySelector(".bermaid-hint") ? "hint"
         : b.querySelector(".bermaid-error") ? "error: " + b.querySelector(".bermaid-error").textContent.trim().slice(0, 40)
         : b.querySelector(".bermaid-loading") ? "loading" : null;
       if (s && s !== lastSlot) { lastSlot = s; marks.push({ t: performance.now(), mark: "slot " + s }); }
@@ -108,11 +117,32 @@ for (let r = 0; r < runs; r++) {
       : editing === childUuid ? "child code block" : editing === u ? "macro block" : "other block " + String(editing).slice(0, 8);
     const ev = [...window.__bmMarks.map(m => ({ t: m.t - t0, e: m.mark })),
                 ...window.__bmCalls.filter(c => window.__bmTracked.has(c.call)).map(c => ({ t: c.t - t0, e: "api " + c.call }))].sort((a, b) => a.t - b.t);
-    return { ev, cursor: where, timedOut: performance.now() >= until, title: parent?.title ?? parent?.content };
+    return { ev, cursor: where, timedOut: performance.now() >= until, title: parent?.title ?? parent?.content, childUuid };
   }, uuid);
+
+  // Next step as a user: click into the code block, type a diagram, wait for it to show.
+  out.previewMs = null;
+  if (out.childUuid) {
+    await page.click(`.ls-block[blockid="${out.childUuid}"] .CodeMirror`);
+    await page.waitForTimeout(300);
+    await page.keyboard.type("flowchart LR\n  A --> B", { delay: 30 });
+    await page.evaluate(() => { window.__bmEsc = performance.now(); });
+    await page.keyboard.press("Escape");
+    out.previewMs = await page.evaluate(async (u) => {
+      const tLast = window.__bmEsc;
+      const shown = () => document.querySelector(`.ls-block[blockid="${u}"] .bermaid-wrapper svg`);
+      while (performance.now() - tLast < 5000) {
+        if (shown()) return performance.now() - tLast;
+        await new Promise(res => setTimeout(res, 20));
+      }
+      return null;
+    }, uuid);
+    await page.waitForTimeout(500);
+  }
   results.push(out);
 
-  console.log(`\n--- run ${r + 1}${out.timedOut ? " (TIMED OUT)" : ""}: block "${out.title}", cursor ends in: ${out.cursor}`);
+  console.log(`\n--- run ${r + 1}${out.timedOut ? " (TIMED OUT)" : ""}: block "${out.title}", cursor ends in: ${out.cursor}, ` +
+    `diagram shown ${out.previewMs == null ? "NEVER (5 s)" : out.previewMs.toFixed(0) + " ms"} after leaving the code block`);
   // Collapse runs of the same call for readability.
   let prev = null, count = 0, first = 0;
   const flush = () => { if (prev) console.log(`${first.toFixed(0).padStart(6)} ms  ${prev}${count > 1 ? ` ×${count}` : ""}`); };
@@ -134,6 +164,17 @@ const summary = {
 };
 console.log("\n=== median over", runs, "runs (ms from Enter)");
 for (const [k, v] of Object.entries(summary)) console.log(`${k.padEnd(20)} ${v == null ? "-" : v.toFixed(0)}`);
+const previews = results.map(o => o.previewMs);
+summary["diagram after Esc"] = previews.some(x => x == null) ? null : median(previews);
+console.log(`${"diagram after Esc".padEnd(20)} ${summary["diagram after Esc"] == null ? "NEVER in at least one run" : summary["diagram after Esc"].toFixed(0)}`);
 console.log("cursor ends in:", [...new Set(results.map(o => o.cursor))].join(" | "));
+
+let pass = true;
+const check = (ok, msg) => { console.log((ok ? "PASS " : "FAIL ") + msg); if (!ok) pass = false; };
+check(!results.some(o => o.timedOut), "no run timed out");
+check(summary["child block in DOM"] != null && summary["child block in DOM"] <= maxChildMs, `code block in DOM <= ${maxChildMs} ms (median ${summary["child block in DOM"]?.toFixed(0)})`);
+check(summary["diagram after Esc"] != null && summary["diagram after Esc"] <= maxPreviewMs, `diagram <= ${maxPreviewMs} ms after leaving the code block (median ${summary["diagram after Esc"]?.toFixed(0) ?? "never"})`);
+const errors = results.flatMap(o => o.ev.filter(x => x.e.startsWith("slot error")).map(x => x.e));
+check(errors.length === 0, `no red error state (${[...new Set(errors)].join(" | ") || "none"})`);
 await browser.close();
-process.exit(results.some(o => o.timedOut) ? 1 : 0);
+process.exit(pass ? 0 : 1);

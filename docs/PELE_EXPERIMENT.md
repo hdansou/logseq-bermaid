@@ -20,8 +20,10 @@ Decision: **pending** (owner reviews the results below).
 - [x] Round 2 gates: sizing e2e (new), resize ×3, lightbox, light and dark screenshots
 - [x] Owner review of round 2: pursue Pele
 - [x] Measure `/bermaid` latency and assess insertion alternatives, see [`INSERT_FLOW_ASSESSMENT.md`](INSERT_FLOW_ASSESSMENT.md) (new `scripts/e2e/slash-latency.mjs`)
-- [ ] Owner decision on the insertion flow (recommended: worker clock + A, E as follow-up)
-- [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note), README, CHANGELOG; drop `docs/pele-experiment/` screenshots
+- [x] Owner decision on the insertion flow: worker clock + A
+- [x] Worker clock + A implemented and gated, see `INSERT_FLOW_ASSESSMENT.md` §6
+- [ ] Decide on E ("render as diagram" on an existing code block)
+- [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note, clock/1 Hz timers, renderer no longer polls for the child, new e2e scripts), README, CHANGELOG; drop `docs/pele-experiment/` screenshots
 - [ ] Restore the v0.5.0 install after the experiment (or ship)
 
 ## Changes

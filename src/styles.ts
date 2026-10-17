@@ -93,7 +93,8 @@ export const BERMAID_STYLES = `
     display: block;
     pointer-events: none;
   }
-  .bermaid-loading {
+  .bermaid-loading,
+  .bermaid-hint {
     color: var(--ls-secondary-text-color, #999);
     font-style: italic;
     padding: 8px;
