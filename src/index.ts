@@ -1,7 +1,7 @@
 import '@logseq/libs'
 import type { BlockEntity, BlockUUIDTuple } from '@logseq/libs/dist/LSPlugin'
 import { THEME_CHOICES, MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH } from './constants'
-import { parseWidthArg, extractMermaidSyntax, getBlockText, BERMAID_MACRO_RE } from './macro'
+import { parseWidthArg, extractMermaidSyntax, getBlockText, BERMAID_MACRO_RE, isMermaidCodeBlock } from './macro'
 import { svgCache, renderedSlots } from './cache'
 import { renderDiagram, copyImageToClipboard, type RenderConfig } from './render'
 import { BERMAID_STYLES } from './styles'
@@ -408,6 +408,37 @@ async function main() {
       logseq.UI.showMsg('❌ Failed to insert /bermaid template', 'error')
     }
   }
+
+  // Wrap an existing mermaid code block in a diagram: insert the macro just above
+  // it and move the code block under it. The code itself is never rewritten, so
+  // indentation (kanban, mindmap) survives. Starting from a code block lets
+  // Logseq's own /code command focus the editor, which a plugin cannot do.
+  const renderCodeBlockAsDiagram = async (uuid: string) => {
+    try {
+      const block = await logseq.Editor.getBlock(uuid)
+      const { detectType } = await import('pele/lazy')
+      if (!isMermaidCodeBlock(block, (code) => detectType(code) !== null)) {
+        logseq.UI.showMsg('Bermaid: not a mermaid code block', 'warning')
+        return
+      }
+      const parentId = (block!.parent as { id?: number } | undefined)?.id
+      const parent = parentId !== undefined ? await logseq.Editor.getBlock(parentId).catch(() => null) : null
+      if (parent && BERMAID_MACRO_RE.test(getBlockText(parent))) {
+        logseq.UI.showMsg('Bermaid: already a diagram', 'info')
+        return
+      }
+      await logseq.Editor.exitEditingMode(false).catch(() => null)
+      const macro = await logseq.Editor.insertBlock(uuid, '{{renderer :bermaid}}', { before: true, sibling: true })
+      if (!macro?.uuid) throw new Error('could not insert the diagram block')
+      await logseq.Editor.moveBlock(uuid, macro.uuid, { children: true })
+    } catch (err) {
+      console.error('Bermaid: failed to render code block as diagram', err)
+      logseq.UI.showMsg('❌ Failed to render as Bermaid diagram', 'error')
+    }
+  }
+
+  logseq.Editor.registerBlockContextMenuItem('Render as Bermaid diagram', ({ uuid }) =>
+    renderCodeBlockAsDiagram(uuid))
 
   // --- Slash Command ---
   logseq.Editor.registerSlashCommand('bermaid', async (event) => {

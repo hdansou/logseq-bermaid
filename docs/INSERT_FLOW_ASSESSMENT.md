@@ -105,3 +105,53 @@ After `/bermaid`, the slot showed "Child block is empty" and was **not tracked**
 Regression gates on the new build: `sizing.mjs` 24/24 (8 diagrams), `resize.mjs` 6/6 at dx +120 and −60, `lightbox.mjs` 7/7, `npm test` 33/33.
 
 Still open: the cursor ends nowhere after `/bermaid`; one click into the code block remains (not fixable from an installed plugin). Option E is the candidate follow-up.
+
+## 7. Option E prototype: "Render as Bermaid diagram" (2026-10-17)
+
+Built on the branch for evaluation; the owner decides whether it ships.
+
+### How it works
+
+Block context menu item **Render as Bermaid diagram** (right-click a block's bullet). On a mermaid code block it inserts `{{renderer :bermaid}}` just above the block (`insertBlock(…, { before: true, sibling: true })`) and moves the code block under it (`moveBlock(…, { children: true })`). The code is never rewritten. On anything else it shows "not a mermaid code block"; on a code block already under a Bermaid macro, "already a diagram".
+
+`isMermaidCodeBlock()` (`src/macro.ts`, unit-tested) accepts:
+
+- a DB-graph code block with `:logseq.property.code/lang` = `mermaid`,
+- a file-graph block whose first line is a ```` ```mermaid ```` fence,
+- a code block with **no language** whose content Pele's `detectType` recognises. Needed because Logseq's `/code` creates code blocks with `lang: null`; without this the natural path failed (caught by the e2e, red before the fix).
+
+A code block in another language (e.g. python) is never sent to the detector.
+
+### Measured (`scripts/e2e/convert.mjs`, installed build)
+
+| Check | Result |
+| ----- | ------ |
+| Code block becomes the only child of a new `{{renderer :bermaid}}` block | PASS |
+| Code unchanged, kanban indentation included | PASS |
+| Diagram on screen after the menu click | **370–424 ms** |
+| Second run on the wrapped block adds no macro | PASS |
+| `/code` → type → Escape → menu (language unset) | PASS (red before the detector) |
+| Python code block left alone | PASS |
+
+Regression gates on the same build: `slash-latency` 4/4 (code block 176 ms, diagram 423 ms after Esc), `sizing` 36/36, `resize` 6/6, `lightbox` 7/7, `npm test` 39/39.
+
+Screenshots: [`option-e-1-code.png`](pele-experiment/option-e-1-code.png), [`option-e-2-menu.png`](pele-experiment/option-e-2-menu.png), [`option-e-3-result.png`](pele-experiment/option-e-3-result.png).
+
+### Findings from the user path
+
+- **`/code` focuses the code editor natively** (`activeElement` inside `.CodeMirror` right after Enter): you type at once, which `/bermaid` cannot offer.
+- **`/code` sets no language.** Hence the detector.
+- **Typing ```` ```mermaid ```` by hand is unreliable:** Logseq turns the block into a code block mid-word and the rest (`aid`) lands in the code. Not a path to document.
+- Right after Escape, the `/code` block was drawn as plain text in one screenshot; after conversion it shows as a normal code block. Logseq display, outside the plugin.
+- The menu item sits among every plugin's block items (here between "Collapse all" and a list of AI items), so it relies on the user knowing it is there: README needs a line, and the `/bermaid` hint could mention it.
+
+### Steps compared
+
+| | `/bermaid` (A) | `/code` + menu (E) |
+| - | - | - |
+| Start | type `/bermaid` ↵ | type `/code` ↵ |
+| Cursor in the code editor | click into the code block | already there |
+| Write the diagram | type or paste, Esc | type or paste, Esc |
+| Make it a diagram | done | right-click bullet → Render as Bermaid diagram |
+| Diagram visible | ~0.4 s after Esc | ~0.4 s after the click |
+| Also converts code that already exists (pasted from elsewhere, older notes) | no | **yes** |
