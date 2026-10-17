@@ -18,7 +18,9 @@ Decision: **pending** (owner reviews the results below).
 - [x] Finding 1 decided: option (a), natural size, never upscaled (round 2)
 - [x] Finding 2 decided: carry beautiful-mermaid's color derivation forward exactly (round 2)
 - [x] Round 2 gates: sizing e2e (new), resize ×3, lightbox, light and dark screenshots
-- [ ] Owner review of round 2
+- [x] Owner review of round 2: pursue Pele
+- [x] Measure `/bermaid` latency and assess insertion alternatives, see [`INSERT_FLOW_ASSESSMENT.md`](INSERT_FLOW_ASSESSMENT.md) (new `scripts/e2e/slash-latency.mjs`)
+- [ ] Owner decision on the insertion flow (recommended: worker clock + A, E as follow-up)
 - [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note), README, CHANGELOG; drop `docs/pele-experiment/` screenshots
 - [ ] Restore the v0.5.0 install after the experiment (or ship)
 
