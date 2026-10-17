@@ -10,10 +10,12 @@ Bermaid (**Better Mermaid**) is a Logseq plugin that renders Mermaid diagrams wi
 
 - Render diagrams from `{{renderer :bermaid}}` using child block content
 - `/bermaid` slash command to insert an empty diagram block, ready for your Mermaid syntax
+- **Render as Bermaid diagram** — right-click the bullet of any Mermaid code block to turn it into a diagram, including code you pasted or wrote before
+- Every diagram type built into Mermaid 12.1: flowchart, sequence, class, state, ER, Gantt, pie, mindmap, timeline, C4, kanban, sankey and more
 - **Lightbox** — click any diagram to view it full-screen in the same viewer Logseq uses for images (PhotoSwipe): zoom, pan, Esc to close
 - Copy rendered diagrams as PNG via hover button
 - Drag the corner grip to resize diagrams
-- **Live re-render** — edit a diagram's source and the render updates in place, no reload
+- **Live re-render** — edit a diagram's source and the render updates in place when you leave the code block, no reload
 - Custom width persists in the macro itself (`{{renderer :bermaid, 500}}`), so it survives in both file-based and DB graphs
 - Theme support with `auto` mode that follows Logseq light/dark mode
 - Optional transparent background setting
@@ -43,8 +45,16 @@ Bermaid (**Better Mermaid**) is a Logseq plugin that renders Mermaid diagrams wi
 1. In a block, type `/bermaid` and run the command.
 2. Bermaid inserts:
    - `{{renderer :bermaid}}` in the current block
-   - A child block with starter Mermaid syntax
-3. Edit the child block text and the diagram updates on render.
+   - An empty ```` ```mermaid ```` code block under it
+3. Click into the code block, write your diagram, and press Esc: the diagram appears.
+
+### From an existing code block
+
+1. Make a code block with `/code` (the cursor lands in it), or use one you already have.
+2. Type or paste your Mermaid diagram and press Esc.
+3. Right-click the block's bullet and choose **Render as Bermaid diagram**.
+
+Bermaid adds `{{renderer :bermaid}}` above the code block and moves the code block under it, unchanged. It works on code blocks marked `mermaid` and on code blocks with no language whose content is a Mermaid diagram; anything else is left alone.
 
 ### Manual macro
 

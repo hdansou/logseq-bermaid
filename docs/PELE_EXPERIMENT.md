@@ -23,7 +23,7 @@ Decision (2026-10-17): **adopt Pele as the only engine.** beautiful-mermaid is n
 - [x] Owner decision on the insertion flow: worker clock + A
 - [x] Worker clock + A implemented and gated, see `INSERT_FLOW_ASSESSMENT.md` §6
 - [x] Prototype E and test it, see `INSERT_FLOW_ASSESSMENT.md` §7 (new `scripts/e2e/convert.mjs`)
-- [ ] Owner decision: ship E in this release?
+- [x] Owner decision (2026-10-17): **ship E** in this release. README: feature line, "From an existing code block" usage section; `/bermaid` usage corrected (empty code block, diagram appears on Esc)
 - [x] Coverage (522 Mermaid docs examples, both engines) and per-type visual review, see Round 3
 - [x] Owner decision (2026-10-17): **Pele only**, no engine setting
 - [x] Name stays **Bermaid**, now standing for **Better Mermaid** (owner, 2026-10-17). Plugin id `logseq-bermaid` and the `:bermaid` macro are unchanged, so existing installs and diagrams keep working. Updated: `package.json` descriptions, README intro / Settings / Credits (Pele as engine, beautiful-mermaid credited for the themes and as the engine up to v0.5), theme setting description, `docs/MARKETPLACE_SUBMISSION.md`
