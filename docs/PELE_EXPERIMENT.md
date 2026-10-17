@@ -2,7 +2,7 @@
 
 Branch: `experiment/pele`. Question: is [Pele](https://github.com/obsidianmd/pele) (`pele@1.6.0`) a viable, faster and lighter replacement for `beautiful-mermaid@1.1.3`?
 
-Decision: **pending** (owner reviews the results below).
+Decision (2026-10-17): **adopt Pele as the only engine.** beautiful-mermaid is not kept as a fallback; see Round 3 for why. Open: insertion option E, then release prep.
 
 ## Tasks
 
@@ -24,7 +24,7 @@ Decision: **pending** (owner reviews the results below).
 - [x] Worker clock + A implemented and gated, see `INSERT_FLOW_ASSESSMENT.md` §6
 - [ ] Decide on E ("render as diagram" on an existing code block)
 - [x] Coverage (522 Mermaid docs examples, both engines) and per-type visual review, see Round 3
-- [ ] Owner decision: engine setting vs Pele only (recommended: Pele only)
+- [x] Owner decision (2026-10-17): **Pele only**, no engine setting
 - [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note, clock/1 Hz timers, renderer no longer polls for the child, new e2e scripts), README, CHANGELOG; drop `docs/pele-experiment/` screenshots
 - [ ] Restore the v0.5.0 install after the experiment (or ship)
 
