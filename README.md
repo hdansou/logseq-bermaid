@@ -2,9 +2,11 @@
 
 Bermaid (**Better Mermaid**) is a Logseq plugin that renders Mermaid diagrams with [Pele](https://github.com/obsidianmd/pele) ([npm](https://www.npmjs.com/package/pele)), a fast, lightweight Mermaid renderer that supports every diagram type built into Mermaid 12.1.
 
-![Bermaid rendering a top-down flowchart in light mode](docs/screenshot-light-td.png)
+![Bermaid in a Logseq journal: /bermaid, type a flowchart, resize it, turn a /code block into a pie chart with Render as Bermaid diagram, switch to dark mode, open the lightbox](docs/demo.gif)
 
-![Bermaid rendering a left-right decision flow in dark mode](docs/screenshot-dark-lr.png)
+![A Logseq journal page with a Bermaid flowchart and pie chart, light mode](docs/screenshot-light.png)
+
+![The same journal page in dark mode](docs/screenshot-dark.png)
 
 ## Features
 

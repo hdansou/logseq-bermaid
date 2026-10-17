@@ -135,7 +135,7 @@ A code block in another language (e.g. python) is never sent to the detector.
 
 Regression gates on the same build: `slash-latency` 4/4 (code block 176 ms, diagram 423 ms after Esc), `sizing` 36/36, `resize` 6/6, `lightbox` 7/7, `npm test` 39/39.
 
-Screenshots: [`option-e-1-code.png`](pele-experiment/option-e-1-code.png), [`option-e-2-menu.png`](pele-experiment/option-e-2-menu.png), [`option-e-3-result.png`](pele-experiment/option-e-3-result.png).
+Screenshots: [`option-e-1-code.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/option-e-1-code.png), [`option-e-2-menu.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/option-e-2-menu.png), [`option-e-3-result.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/option-e-3-result.png).
 
 ### Findings from the user path
 

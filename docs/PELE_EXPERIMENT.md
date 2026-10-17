@@ -27,8 +27,10 @@ Decision (2026-10-17): **adopt Pele as the only engine.** beautiful-mermaid is n
 - [x] Coverage (522 Mermaid docs examples, both engines) and per-type visual review, see Round 3
 - [x] Owner decision (2026-10-17): **Pele only**, no engine setting
 - [x] Name stays **Bermaid**, now standing for **Better Mermaid** (owner, 2026-10-17). Plugin id `logseq-bermaid` and the `:bermaid` macro are unchanged, so existing installs and diagrams keep working. Updated: `package.json` descriptions, README intro / Settings / Credits (Pele as engine, beautiful-mermaid credited for the themes and as the engine up to v0.5), theme setting description, `docs/MARKETPLACE_SUBMISSION.md`
-- [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note, clock/1 Hz timers, renderer no longer polls for the child, new e2e scripts), README (new screenshots: the current ones show beautiful-mermaid renders), `docs/REQUIREMENTS.md` (still describes beautiful-mermaid), CHANGELOG; drop `docs/pele-experiment/` screenshots
-- [ ] Restore the v0.5.0 install after the experiment (or ship)
+- [x] v0.6.0 release prep: CLAUDE.md, README (Better Mermaid, Render as Bermaid diagram, new media), `docs/REQUIREMENTS.md`, CHANGELOG, version 0.6.0. `@logseq/libs` already at 0.3.4 (newest). Media recorded in today's journal in the test instance: `docs/demo.gif` / `docs/demo.mp4` (CDP screencast, 48 s), `docs/screenshot-light.png` / `-dark.png` (2×). Experiment screenshots removed from the tree; the links above point at commit `a4331d8`
+- [x] Final gate on the installed v0.6.0 build: typecheck, `npm test` 39/39, `npm audit` 0, build (`dist/` 992 KB), `convert` 8/8, `slash-latency` 4/4 (160 / 412 ms), `sizing` 36/36, `resize` 6/6, `lightbox` 7/7
+- [ ] Owner review, then merge to `main`, tag `v0.6.0`, push (publishes the GitHub release)
+- [ ] After the release: replace the installed test build with the released zip (v0.5.0 backup no longer needed)
 
 ## Changes
 
@@ -76,7 +78,7 @@ Run 2026-10-17 on a private Logseq-DB instance (CDP port 9345, fresh profile), t
 | SVG drawn through `<img>` → canvas: background var paints, `color-mix` fill = 242 (expected 241.6) | PASS |
 | Live edit re-renders; `A -->` (incomplete) keeps the last good render | PASS |
 
-Screenshots: [`light-auto.png`](pele-experiment/light-auto.png), [`dark-auto.png`](pele-experiment/dark-auto.png), [`dark-er-pie.png`](pele-experiment/dark-er-pie.png).
+Screenshots: [`light-auto.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/light-auto.png), [`dark-auto.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/dark-auto.png), [`dark-er-pie.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/dark-er-pie.png).
 
 ### Intrinsic size, same source
 
@@ -140,7 +142,7 @@ The old resize check compared the **wrapper's** height/width before and after a 
 | `resize.mjs` sequence 210 → 360 (crosses natural 333) | 6/6 |
 | `lightbox.mjs` | 7/7 |
 
-Screenshots: [`v2-light-auto.png`](pele-experiment/v2-light-auto.png), [`v2-dark-auto.png`](pele-experiment/v2-dark-auto.png), [`v2-dark-er-pie-c4.png`](pele-experiment/v2-dark-er-pie-c4.png). The C4 component diagram on the test page was added by the owner during review and renders as `pele-c4`.
+Screenshots: [`v2-light-auto.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/v2-light-auto.png), [`v2-dark-auto.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/v2-dark-auto.png), [`v2-dark-er-pie-c4.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/v2-dark-er-pie-c4.png). The C4 component diagram on the test page was added by the owner during review and renders as `pele-c4`.
 
 Trade-off of option (a): dragging the grip past a diagram's natural width grows the box but not the diagram. Use the lightbox to see it larger.
 
@@ -177,7 +179,7 @@ Caveats: this is Pele's own test corpus, so 522/522 shows it accepts the documen
 
 ### Polish: one example per type, looked at
 
-32 types (all but `info`), the fullest documentation example under 500 characters (Pele's own site uses the same rule), at width 600, `github-light`. 28 were captured from the **installed plugin** in the test instance; 4 (cynefin, er, eventmodeling, flowchart) in headless Chromium with the same Pele build and theme, because the test window became hidden and Logseq stopped mounting blocks. Sheets: [`coverage-sheet-1.png`](pele-experiment/coverage-sheet-1.png) … [`coverage-sheet-4.png`](pele-experiment/coverage-sheet-4.png).
+32 types (all but `info`), the fullest documentation example under 500 characters (Pele's own site uses the same rule), at width 600, `github-light`. 28 were captured from the **installed plugin** in the test instance; 4 (cynefin, er, eventmodeling, flowchart) in headless Chromium with the same Pele build and theme, because the test window became hidden and Logseq stopped mounting blocks. Sheets: [`coverage-sheet-1.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/coverage-sheet-1.png) … [`coverage-sheet-4.png`](https://github.com/hdansou/logseq-bermaid/blob/a4331d8/docs/pele-experiment/coverage-sheet-4.png).
 
 All 32 draw complete, coherent diagrams: labels, legends, axes, nesting and arrows are where they should be, and colors set by the example itself (state `Crash`, sequence `rect` blocks) are honoured. Notes:
 
