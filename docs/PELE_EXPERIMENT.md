@@ -23,6 +23,8 @@ Decision: **pending** (owner reviews the results below).
 - [x] Owner decision on the insertion flow: worker clock + A
 - [x] Worker clock + A implemented and gated, see `INSERT_FLOW_ASSESSMENT.md` §6
 - [ ] Decide on E ("render as diagram" on an existing code block)
+- [x] Coverage (522 Mermaid docs examples, both engines) and per-type visual review, see Round 3
+- [ ] Owner decision: engine setting vs Pele only (recommended: Pele only)
 - [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note, clock/1 Hz timers, renderer no longer polls for the child, new e2e scripts), README, CHANGELOG; drop `docs/pele-experiment/` screenshots
 - [ ] Restore the v0.5.0 install after the experiment (or ship)
 
@@ -144,3 +146,46 @@ Trade-off of option (a): dragging the grip past a diagram's natural width grows 
 
 - Pele has its own layout and visual style; diagrams will not look like beautiful-mermaid's.
 - Pele 1.6.0 was published the day this experiment started; the API is young.
+
+## Round 3 (2026-10-17): coverage and polish, and an engine choice
+
+Question from the owner: offer a setting to pick Pele or beautiful-mermaid, because Pele is new and some types are marked "beta"?
+
+### What "beta" means here
+
+Pele's compatibility table (`website/src/content/docs/compatibility.md`) lists the `-beta` keywords (`xychart-beta`, `sankey-beta`, `architecture-beta`, `radar-beta`, `treeView-beta`, …). These are **Mermaid's own keywords**: Mermaid marks those diagram types as beta, and Pele accepts the same keywords. Pele claims every diagram type built into Mermaid 12.1.0 (33 types plus `info`); ZenUML and external Mermaid plugins are not supported.
+
+### Coverage: every example in Mermaid's documentation
+
+Corpus: `tests/corpus/*-docs.json` in the Pele repo (commit `458322a`), 522 examples across 33 types, extracted from Mermaid's documentation. Both engines in Node; "renders" = returns an SVG without throwing.
+
+| Type | Docs examples | Pele 1.6.0 | beautiful-mermaid 1.1.3 |
+| ---- | ------------- | ---------- | ----------------------- |
+| flowchart | 114 | 114 | 109 |
+| class | 38 | 38 | 33 |
+| sequence | 38 | 38 | 37 |
+| er | 25 | 25 | 22 |
+| state | 22 | 22 | 20 |
+| xychart (beta) | 8 | 8 | 4 |
+| 27 other types (block, gantt, git, mindmap, pie, timeline, C4, sankey, …) | 277 | 277 | **0** |
+| **Total** | **522** | **522** | **225** |
+| Types with at least one render | 33 | **33** | **6** |
+
+Caveats: this is Pele's own test corpus, so 522/522 shows it accepts the documented syntax, not that the output is good. That needs eyes (next section).
+
+### Polish: one example per type, looked at
+
+32 types (all but `info`), the fullest documentation example under 500 characters (Pele's own site uses the same rule), at width 600, `github-light`. 28 were captured from the **installed plugin** in the test instance; 4 (cynefin, er, eventmodeling, flowchart) in headless Chromium with the same Pele build and theme, because the test window became hidden and Logseq stopped mounting blocks. Sheets: [`coverage-sheet-1.png`](pele-experiment/coverage-sheet-1.png) … [`coverage-sheet-4.png`](pele-experiment/coverage-sheet-4.png).
+
+All 32 draw complete, coherent diagrams: labels, legends, axes, nesting and arrows are where they should be, and colors set by the example itself (state `Crash`, sequence `rect` blocks) are honoured. Notes:
+
+- **Faint lines in `github-light`** hurt Wardley most (edges barely visible), the same pale `line` color seen in round 1. A theme question, not Pele.
+- **Wide diagrams** (timeline 1388px, mindmap 1274, swimlane 1174) shrink to fit and their text gets small; resize or the lightbox shows them full size.
+- **Pie, and other charts with series colors,** use Pele's default series palette, not the theme.
+- Two apparent defects were mine, checked and ruled out:
+  - *Kanban card drawn as a second column.* Pele renders the source correctly (Todo, count 1, card with ticket and assignee). The seeding used `insert_block` with a fenced string, and **Logseq's `insert_block` strips leading indentation from fenced content** (`"\n  id3[Card]"` stored as `"\nid3[Card]"`). `update_block` on an existing code block keeps indentation. The plugin only inserts an empty fence, so it is not affected; typing into the code editor could not be tested while the window was hidden (unverified).
+  - *Railroad cut off at the bottom.* Screenshot viewport (1000px) vs a 1012px diagram; rendered alone, the content ends at y=1004 inside its 1012 viewBox.
+
+### Conclusion on an engine setting
+
+beautiful-mermaid only renders 6 of the 33 types. For the other 27, including every `-beta` type, there is nothing to fall back to, so a fallback would protect only the mature types, where Pele is strongest. Recommendation: **Pele only**, no engine setting; keep the engine confined to `src/render.ts` and `src/theme.ts`; pin the exact version (done: `"pele": "1.6.0"`) and treat each Pele upgrade as a release gate (corpus run plus contact-sheet review).
