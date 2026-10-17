@@ -169,7 +169,7 @@ async function main() {
       enumPicker: 'select',
       default: 'auto',
       title: 'Theme',
-      description: 'Beautiful-mermaid theme. "auto" matches Logseq light/dark mode.',
+      description: 'Diagram color theme. "auto" matches Logseq light/dark mode.',
     },
     {
       key: 'transparentBg',

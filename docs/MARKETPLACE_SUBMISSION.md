@@ -28,7 +28,7 @@ Suggested content:
 ```json
 {
   "title": "Bermaid - Diagrams",
-  "description": "Beautiful mermaid diagram renderer for Logseq using beautiful-mermaid",
+  "description": "Bermaid (Better Mermaid): fast, lightweight Mermaid diagrams for Logseq, rendered with Pele",
   "author": "Danzu",
   "repo": "hdansou/logseq-bermaid",
   "icon": "./icon.svg",

@@ -25,7 +25,8 @@ Decision (2026-10-17): **adopt Pele as the only engine.** beautiful-mermaid is n
 - [ ] Decide on E ("render as diagram" on an existing code block)
 - [x] Coverage (522 Mermaid docs examples, both engines) and per-type visual review, see Round 3
 - [x] Owner decision (2026-10-17): **Pele only**, no engine setting
-- [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note, clock/1 Hz timers, renderer no longer polls for the child, new e2e scripts), README, CHANGELOG; drop `docs/pele-experiment/` screenshots
+- [x] Name stays **Bermaid**, now standing for **Better Mermaid** (owner, 2026-10-17). Plugin id `logseq-bermaid` and the `:bermaid` macro are unchanged, so existing installs and diagrams keep working. Updated: `package.json` descriptions, README intro / Settings / Credits (Pele as engine, beautiful-mermaid credited for the themes and as the engine up to v0.5), theme setting description, `docs/MARKETPLACE_SUBMISSION.md`
+- [ ] If adopted: update CLAUDE.md (Architecture, Theme Resolution, Key Files, resize e2e note, clock/1 Hz timers, renderer no longer polls for the child, new e2e scripts), README (new screenshots: the current ones show beautiful-mermaid renders), `docs/REQUIREMENTS.md` (still describes beautiful-mermaid), CHANGELOG; drop `docs/pele-experiment/` screenshots
 - [ ] Restore the v0.5.0 install after the experiment (or ship)
 
 ## Changes

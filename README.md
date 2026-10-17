@@ -1,6 +1,6 @@
 # Bermaid
 
-Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) renderer ([npm](https://www.npmjs.com/package/beautiful-mermaid)).
+Bermaid (**Better Mermaid**) is a Logseq plugin that renders Mermaid diagrams with [Pele](https://github.com/obsidianmd/pele) ([npm](https://www.npmjs.com/package/pele)), a fast, lightweight Mermaid renderer that supports every diagram type built into Mermaid 12.1.
 
 ![Bermaid rendering a top-down flowchart in light mode](docs/screenshot-light-td.png)
 
@@ -74,7 +74,7 @@ graph TD
 
 ## Settings
 
-- **Theme**: `auto` or a specific beautiful-mermaid theme
+- **Theme**: `auto` (follows Logseq light/dark mode) or a named theme: Tokyo Night, Catppuccin, Nord, Dracula, GitHub, Solarized, One Dark and more
 - **Transparent Background**: controls SVG/PNG background transparency
 
 ## Development
@@ -124,8 +124,9 @@ Detailed steps and a manifest template are in [docs/MARKETPLACE_SUBMISSION.md](d
 
 ## Credits
 
-- [**beautiful-mermaid**](https://github.com/lukilabs/beautiful-mermaid) by [lukilabs](https://github.com/lukilabs) — the SVG rendering engine that does all the heavy lifting. Bermaid is a thin Logseq integration around it; the diagrams, themes, and styling come from beautiful-mermaid.
-- [**Mermaid**](https://github.com/mermaid-js/mermaid) — the diagramming language beautiful-mermaid is built on.
+- [**Pele**](https://github.com/obsidianmd/pele) by [Obsidian](https://github.com/obsidianmd) — the SVG rendering engine that does the heavy lifting: parsing, layout and drawing for every Mermaid diagram type.
+- [**beautiful-mermaid**](https://github.com/lukilabs/beautiful-mermaid) by [lukilabs](https://github.com/lukilabs) — Bermaid's engine up to v0.5; its color themes and the way it derives fills, borders and arrow colors live on in Bermaid's theme setting.
+- [**Mermaid**](https://github.com/mermaid-js/mermaid) — the diagramming language.
 
 ## License
 
