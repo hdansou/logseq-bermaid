@@ -55,7 +55,9 @@ const rect = () => page.evaluate(s => {
   const w = document.querySelector(s); if (!w) return null;
   w.scrollIntoView({ block: "center" });
   const r = w.getBoundingClientRect();
-  return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height, inlineHeight: w.style.height };
+  // The diagram, not the box: past its natural width the SVG stops growing and the box ratio changes.
+  const d = w.querySelector(".bermaid-container svg")?.getBoundingClientRect();
+  return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height, inlineHeight: w.style.height, svgAspect: d ? d.width / d.height : null };
 }, sel);
 const macroWidth = () => page.evaluate(async u => {
   const b = await logseq.api.get_block(u); const t = b?.title ?? b?.content ?? "";
@@ -87,7 +89,7 @@ try {
   check(!editingDuring && !editingAfter, "block did not enter edit mode");
   check(after && Math.abs(after.width - (b.width + dx)) <= 4, `width persisted after release (${after?.width})`);
   check(macroAfter !== null && Math.abs(macroAfter - (b.width + dx)) <= 4, `macro arg rewritten (${macroBefore} -> ${macroAfter})`);
-  check(after && Math.abs(after.height / after.width - b.height / b.width) < 0.02, "aspect ratio preserved");
+  check(after?.svgAspect && Math.abs(after.svgAspect - b.svgAspect) < 0.02, `diagram aspect ratio preserved (${b.svgAspect?.toFixed(3)} -> ${after?.svgAspect?.toFixed(3)})`);
   const own = errors.filter(e => /bermaid/i.test(e) && !/SecurityError/.test(e));
   check(own.length === 0, `no plugin page errors (${own.join(" | ") || "none"})`);
 } catch (e) { console.log("FAIL " + e); pass = false; }

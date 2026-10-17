@@ -1,11 +1,10 @@
 import { AUTO_THEME } from './constants'
 
-interface Palette { bg: string; fg: string; line: string; accent: string; muted: string }
+interface Palette { bg: string; fg: string; line?: string; accent?: string; muted?: string }
 
 // Carried over from beautiful-mermaid's THEMES so the theme setting keeps its meaning.
-// zinc-dark only defined bg/fg there; the rest is filled in from the same zinc scale.
 export const PALETTES: Record<string, Palette> = {
-  'zinc-dark': { bg: '#18181B', fg: '#FAFAFA', line: '#52525B', accent: '#A1A1AA', muted: '#71717A' },
+  'zinc-dark': { bg: '#18181B', fg: '#FAFAFA' },
   'tokyo-night': { bg: '#1a1b26', fg: '#a9b1d6', line: '#3d59a1', accent: '#7aa2f7', muted: '#565f89' },
   'tokyo-night-storm': { bg: '#24283b', fg: '#a9b1d6', line: '#3d59a1', accent: '#7aa2f7', muted: '#565f89' },
   'tokyo-night-light': { bg: '#d5d6db', fg: '#343b58', line: '#34548a', accent: '#34548a', muted: '#9699a3' },
@@ -23,6 +22,10 @@ export const PALETTES: Record<string, Palette> = {
 
 const FALLBACK_THEME = 'tokyo-night'
 
+// Pele fills solid arrowheads with the line color; beautiful-mermaid used the accent.
+// Hollow markers (fill="var(--_bg)") and open ones (stroke only) keep theirs.
+const MARKER_STYLE = '<style>.pele-marker[fill="var(--_l)"]{fill:var(--pele-accent)}</style>'
+
 export function resolveThemeName(theme: string, themeMode: string): string {
   return theme === 'auto' ? AUTO_THEME[themeMode] || FALLBACK_THEME : theme
 }
@@ -30,13 +33,15 @@ export function resolveThemeName(theme: string, themeMode: string): string {
 /**
  * Bake a palette into Pele's root `<svg style>` as `--pele-*` variables, so the colors
  * travel with the SVG into `data:` images (lightbox, copy-to-PNG) where outside CSS never reaches.
- * Surfaces and borders are mixed from bg/fg; Pele itself never paints a background.
+ * Missing colors are mixed from fg into bg with beautiful-mermaid's percentages.
+ * Pele itself never paints a background.
  */
 export function applyTheme(svg: string, themeName: string, transparent: boolean): string {
   const p = PALETTES[themeName] ?? PALETTES[FALLBACK_THEME]
   const mix = (pct: number) => `color-mix(in srgb,${p.fg} ${pct}%,${p.bg})`
-  const vars = `--pele-bg:${p.bg};--pele-fg:${p.fg};--pele-line:${p.line};--pele-accent:${p.accent};` +
-    `--pele-muted:${p.muted};--pele-surface:${mix(6)};--pele-surface-alt:${mix(12)};--pele-border:${mix(30)};` +
+  const vars = `--pele-bg:${p.bg};--pele-fg:${p.fg};--pele-line:${p.line ?? mix(50)};` +
+    `--pele-accent:${p.accent ?? mix(85)};--pele-muted:${p.muted ?? mix(40)};` +
+    `--pele-surface:${mix(3)};--pele-surface-alt:${mix(5)};--pele-border:${mix(20)};` +
     (transparent ? '' : 'background:var(--pele-bg);')
-  return svg.replace(/^(<svg[^>]*?\sstyle=")/, `$1${vars}`)
+  return svg.replace(/^(<svg[^>]*?\sstyle=")([^>]*>)/, `$1${vars}$2${MARKER_STYLE}`)
 }
