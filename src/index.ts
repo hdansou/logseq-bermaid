@@ -157,7 +157,6 @@ function buildDiagramHtml(blockUuid: string, svg: string, width: number): string
 }
 
 async function main() {
-  console.log('Bermaid plugin loaded!')
   const offHooks: Array<() => void> = []
 
   // --- Settings ---
@@ -448,7 +447,6 @@ async function main() {
     }, 0)
   })
 
-  console.log('Bermaid plugin ready!')
 }
 
 logseq.ready(main).catch(console.error)

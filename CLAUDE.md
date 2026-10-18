@@ -179,6 +179,7 @@ When theme mode changes, `onThemeModeChanged` re-renders all diagrams tracked in
 | `src/constants.ts`           | Theme setting choices, auto-theme mapping, widths, cache caps                                                                        |
 | `src/styles.ts`              | CSS injected into Logseq: wrapper, native resize grip, natural-size SVG, copy button, hint/error states                              |
 | `src/utils/svg.ts`           | SVG to PNG Blob conversion                                                                                                           |
+| `src/__sdk_guard__.ts`       | Compile-time floor for `@logseq/libs` (references a 0.3.x API): `npm run typecheck` fails on a downgrade below `minSDKVersion` |
 | `src/utils/text.ts`          | `escapeHtml()` for safe error message display                                                                                        |
 | `vite.config.ts`             | Vite config; terser minification, no sourcemaps; dev server on port 8080                                                             |
 | `vite-logseq-safe-plugin.ts` | Custom Vite plugin replacing `vite-plugin-logseq`; handles dev-server CORS, HMR safety, and writes `dist/index.html` on watch builds |
