@@ -51,3 +51,25 @@ export function extractMermaidSyntax(children: Array<BlockEntity | BlockUUIDTupl
   }
   return mermaidSyntax
 }
+
+/**
+ * Is this block a Mermaid code block that "Render as Bermaid diagram" can wrap?
+ * DB graphs store the language as a property and the code without fences;
+ * file graphs keep the ```mermaid fence in the block text. A code block with no
+ * language (what Logseq's /code makes) counts when `looksLikeMermaid` recognises
+ * its content; the plugin passes Pele's detectType.
+ */
+export function isMermaidCodeBlock(
+  block: BlockEntity | null | undefined,
+  looksLikeMermaid: (code: string) => boolean = () => false,
+): boolean {
+  if (!block) return false
+  const props = block as Record<string, unknown>
+  const lang = props[':logseq.property.code/lang']
+  if (typeof lang === 'string' && lang) return lang.toLowerCase() === 'mermaid'
+  if (props[':logseq.property.node/display-type'] === 'code') return looksLikeMermaid(getBlockText(block))
+  const first = getBlockText(block).trimStart().split('\n')[0].trimEnd()
+  if (/^```mermaid\s*$/i.test(first)) return true
+  if (/^```\s*$/.test(first)) return looksLikeMermaid(extractMermaidSyntax([block]))
+  return false
+}

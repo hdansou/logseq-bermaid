@@ -6,6 +6,39 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-17
+
+Bermaid now stands for **Better Mermaid**: a new rendering engine that draws every Mermaid diagram type, a much faster `/bermaid`, and a way to turn code blocks you already have into diagrams.
+
+### Added
+
+- **Every diagram type built into Mermaid 12.1.** Besides flowchart, sequence, class, state and ER: Gantt, git graph, pie, mindmap, kanban, timeline, user journey, quadrant and XY charts, requirement, sankey, architecture, C4, block, agentflow, railroad, tree view, Cynefin, Wardley map, event modeling, use case, Venn, Ishikawa, packet, radar, treemap and swimlane. All 522 examples in Mermaid's documentation render (beautiful-mermaid rendered 225, in 6 types).
+- **Render as Bermaid diagram.** Right-click the bullet of a Mermaid code block and choose it from the menu: Bermaid adds `{{renderer :bermaid}}` above the block and moves the code under it, unchanged. Works with code blocks marked `mermaid` and with code blocks that have no language (what `/code` makes) when their content is a Mermaid diagram. Start with `/code` and the cursor is already in the code editor; pasted or older diagrams convert the same way.
+
+### Changed
+
+- **New rendering engine: [Pele](https://github.com/obsidianmd/pele) 1.6.0 replaces beautiful-mermaid.** It loads per diagram type: the first diagram now fetches a ~37 KB core plus that type's chunk (1–45 KB) instead of a 1.66 MB (491 KB gzip) bundle, and the packaged plugin shrinks from 1.8 MB to about 1 MB. It also draws faster (40-node flowchart 1.1 ms vs 12.9 ms in a Node benchmark) and its SVGs are 25–55% smaller. **Diagrams look different:** Pele has its own layout and visual style.
+- **Diagrams are shown at their natural size, never scaled up.** They still shrink to fit a narrower wrapper. Pele's diagrams are compact, and filling the 250 px default width blew small ones up 2×. Dragging the resize grip past a diagram's natural width now grows the box but not the drawing; click the diagram for the full-size lightbox.
+- **Themes keep their names and colors.** All 14 themes and `auto` work as before, with beautiful-mermaid's palettes and its rules for fills, borders and accent-colored arrowheads. The colors travel inside the SVG, so the lightbox and Copy as PNG match the page. Pie and other chart series use Pele's default series colors.
+- **`/bermaid` is about 13× faster.** The empty code block appears in ~0.17 s instead of 2.3–3.1 s, and the diagram shows ~0.4 s after you leave the code block. The diagram area shows a neutral "Type Mermaid in the code block below" hint instead of a red "Child block is empty" error.
+- **New icon:** a diagram node forking into two, the fork shaped like a mermaid's tail.
+- **Bermaid = Better Mermaid** in the plugin title (now "Bermaid - Better Mermaid"), description, README and docs. The plugin id (`logseq-bermaid`) and the `{{renderer :bermaid}}` macro are unchanged; existing diagrams keep working.
+
+### Fixed
+
+- **After `/bermaid`, the diagram never appeared until the page was reloaded.** The empty diagram was not tracked, so filling in its code block went unnoticed. Diagrams are now tracked from the first render, empty or not, which also lets a diagram whose first source was invalid recover once it is fixed.
+- **Every wait inside the plugin took about a second.** Logseq keeps a plugin's frame hidden while it shows no UI, and Chromium then fires its timers only once per second, so `/bermaid`'s three short pauses, the re-render debounce and the lightbox's open check each cost up to a full second. Waits now run on a Web Worker timer, which keeps time.
+
+### Removed
+
+- The `beautiful-mermaid` dependency. Pele has no runtime dependencies.
+
+### Notes
+
+- `@logseq/libs` stays at **0.3.4**, the newest release (npm `next` dist-tag; `latest` points at a stale 0.0.17), and `minSDKVersion` is 0.3.4. `npm audit`: 0 vulnerabilities.
+- Logseq's code editor saves a code block when you leave it (Esc or click away), so a diagram updates then, not on every keystroke.
+
+
 ## [0.5.0] - 2026-10-11
 
 Resizing and the lightbox work again for marketplace installs. Development now targets Node 24.

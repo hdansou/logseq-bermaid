@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**logseq-bermaid** is a Logseq plugin that renders Mermaid diagrams using the `beautiful-mermaid` library. Users insert `{{renderer :bermaid}}` macros with child blocks containing Mermaid syntax; the plugin renders them as styled, resizable SVG diagrams.
+**logseq-bermaid** (Bermaid = **Better Mermaid**) is a Logseq plugin that renders Mermaid diagrams with [Pele](https://github.com/obsidianmd/pele), a fast, lightweight renderer that supports every diagram type built into Mermaid 12.1. Users insert `{{renderer :bermaid}}` macros with child blocks containing Mermaid syntax (via `/bermaid`, or **Render as Bermaid diagram** on an existing code block); the plugin renders them as themed, resizable SVG diagrams. Up to v0.5 the engine was `beautiful-mermaid`; its color themes carry over (`src/theme.ts`).
 
 **Graph compatibility:** `web: true`, `supportsDB: true`, `supportsDBOnly: false` — works in both file-based and DB-based graphs.
 
@@ -18,12 +18,24 @@ npm run build     # Production build → dist/ (terser minification, no sourcema
 npm run watch     # Rebuild dist/ on file changes (no HTTP server)
 npm run serve     # Dev HTTP server at http://localhost:8080 (no rebuild)
 npm run typecheck # TypeScript type check only
-npm test          # Unit tests (vitest): macro parsing, fence stripping, SVG sizing, CappedMap
+npm test          # Unit tests (vitest): macro parsing, fence stripping, code-block detection, themes, worker clock, SVG sizing, CappedMap
 ```
 
 ## Testing
 
-Unit tests (`npm test`, vitest) cover the pure helpers in `src/macro.ts`, `src/cache.ts` and `src/utils/svg.ts`; CI runs them. Everything that needs a Logseq host is an e2e script under `scripts/e2e/` and is run by hand from an installed copy (see the test loop below).
+Unit tests (`npm test`, vitest) cover the pure helpers in `src/macro.ts`, `src/theme.ts`, `src/cache.ts`, `src/utils/clock.ts` and `src/utils/svg.ts`; CI runs them. Everything that needs a Logseq host is an e2e script under `scripts/e2e/` and is run by hand from an installed copy (see the test loop below).
+
+E2E gate before a release, all against an installed copy (`--port` is the instance's CDP port):
+
+| Script | Asserts |
+| ------ | ------- |
+| `resize.mjs --uuid <macro>` | grip drag: live width, no edit mode, persisted, macro arg rewritten, diagram aspect kept |
+| `lightbox.mjs --uuid <macro>` | open, Esc, re-open, zoom button, wheel zoom, opener state, close |
+| `sizing.mjs` | every diagram on the open page: drawn width ≤ natural width and ≤ wrapper, aspect kept |
+| `slash-latency.mjs` | types `/bermaid`: code block in DOM ≤ 400 ms, no red error, diagram ≤ 700 ms after leaving the code block (medians of 5 runs; per-step timeline) |
+| `convert.mjs` | Render as Bermaid diagram: structure, code unchanged (indentation), drawn ≤ 1 s, idempotent, `/code` block with no language, python block untouched. Needs a **visible** instance window (context menu) |
+
+A hidden or minimized instance window breaks UI tests silently: Logseq stops mounting blocks and the host page's own timers throttle. Check `document.visibilityState === "visible"` first; relaunching the instance gives a visible window.
 
 The Logseq web app runs at **[http://localhost:3001](http://localhost:3001)**. If it's not running, start it with:
 
@@ -65,27 +77,32 @@ These skills are available and relevant to this project:
 
 ### Plugin Entry Point
 
-`src/index.ts` is the entire plugin logic (~740 lines). It registers with the Logseq SDK via `logseq.ready(main)` and sets up:
+`src/index.ts` holds the hooks and handlers (~450 lines; rendering, themes, macro helpers, caches, the lightbox and the clock live in their own modules). It registers with the Logseq SDK via `logseq.ready(main)` and sets up:
 
 - **Settings schema** — `theme` (enum, 14 named themes + "auto") and `transparentBg` (boolean)
 - **CSS injection** via `logseq.provideStyle()` from `src/styles.ts`
-- **Slash command** `/bermaid` — inserts macro + an empty ```` ```mermaid ```` child block
+- **Slash command** `/bermaid` — rewrites the current block to the macro and inserts an empty ```` ```mermaid ```` child block. No fixed waits (see "Plugin iframe timers run at 1 Hz"); code block in the DOM in ~170 ms
+- **Block context menu** "Render as Bermaid diagram" — `renderCodeBlockAsDiagram()`: if `isMermaidCodeBlock()` (lang `mermaid`, a ```` ```mermaid ```` fence, or a language-less code block that Pele's `detectType` recognises), inserts the macro just above the block (`insertBlock(…, {before: true, sibling: true})`) and moves the code block under it (`moveBlock(…, {children: true})`). The code is never rewritten, so indentation survives. Refuses non-mermaid blocks and blocks already under a Bermaid macro
 - **`onMacroRendererSlotted` hook** — core rendering hook (see Data Flow below)
 - **`onThemeModeChanged` hook** — updates `currentThemeMode` and re-renders all tracked diagrams with the new theme
-- **`DB.onChanged` subscription** — live re-render when a tracked macro or its source child is edited; debounced per macro (~350 ms) via `scheduleRerender()` → `rerenderTrackedDiagram()`. Holds the last good render rather than flashing an error on transient invalid syntax mid-typing
+- **`DB.onChanged` subscription** — live re-render when a tracked macro or its source child is edited; debounced per macro (350 ms, on the worker clock) via `scheduleRerender()` → `rerenderTrackedDiagram()`. Holds the last good render rather than flashing an error on transient invalid syntax mid-typing. A code block's editor writes to the DB only when it is left, so the re-render follows Esc/blur, not each keystroke
 - **No host-document listeners.** Nothing in the plugin touches the host DOM any more: resize is a native CSS grip, the lightbox lives in the plugin's own iframe. The only `ensureHostScope()` call left is in `copyImageToClipboard()`, for a secure-context clipboard.
 
 ### Data Flow for Diagram Rendering
 
 ````txt
 {{renderer :bermaid}} detected by onMacroRendererSlotted
-  → fetch block + children (Editor.getBlock)
+  → fetch block + children (Editor.getBlock; retried only if the block itself is missing)
   → extractMermaidSyntax(children) — join with newlines, strip ```mermaid fences
     (shared with the live re-render path, so a bug here hits both)
-  → renderMermaid() from beautiful-mermaid → SVG string
-  → cache SVG in svgCache (CappedMap<uuid, string>)
-  → track slot in renderedSlots for theme-change re-rendering
   → parseWidthArg(payload.arguments) → width from the macro's 2nd positional arg
+  → track the slot in renderedSlots BEFORE rendering — an empty or not-yet-valid
+    diagram must still pick up edits through DB.onChanged
+  → empty source → neutral .bermaid-hint, stop (no polling for the child: when it
+    arrives or changes, DB.onChanged re-renders)
+  → renderDiagram(): renderAsync() from pele/lazy (loads that diagram type's chunk)
+    → applyTheme() bakes the palette into the SVG → SVG string
+  → cache SVG in svgCache (CappedMap<uuid, string>)
   → provideUI() via buildDiagramHtml() → CSS-resizable wrapper (data-rect click commit) + SVG container + copy button + lightbox trigger
 ````
 
@@ -97,7 +114,7 @@ These skills are available and relevant to this project:
 - **Source** — the cached SVG as a `data:image/svg+xml` URI; intrinsic size from the SVG's `width`/`height` attributes, else its `viewBox` (`svgSize()`).
 - **Zoom levels** — `fit` initially, 2× fit on the zoom button / image click, 8× fit max; `wheelToZoom: true` so a plain wheel zooms (PhotoSwipe's default needs Ctrl/⌘). PhotoSwipe's default secondary level is the image's natural size, which for a vector that already fits would leave the zoom button doing nothing.
 - **Opens with no animation, on purpose.** A click during PhotoSwipe's opening fade (zoom button, the image) interrupts the opener; it never reaches `isOpen`, and from then on close and Esc are silently ignored — a fullscreen overlay the user cannot leave. `showHideAnimationType: 'none'` removes the window. `closeLightbox()` also destroys an instance that never finished opening rather than calling `close()` on it.
-- **Opens only once the frame is displayed.** `showMainUI` is an RPC; until the host adds its `visible` class the iframe is `display:none` with a 0×0 viewport, and an image PhotoSwipe starts loading there ends up broken (`complete`, `naturalWidth` 0). `openLightbox` polls `innerWidth` with a timer (rAF does not run in a hidden frame) before `loadAndOpen`.
+- **Opens only once the frame is displayed.** `showMainUI` is an RPC; until the host adds its `visible` class the iframe is `display:none` with a 0×0 viewport, and an image PhotoSwipe starts loading there ends up broken (`complete`, `naturalWidth` 0). `openLightbox` polls `innerWidth` every 16 ms on the worker clock (rAF does not run in a hidden frame, and its own timers fire at 1 Hz) before `loadAndOpen`.
 - **Hides the frame on `destroy`, not `close`** — `close` fires at the start of the teardown; hiding the iframe then would stop its animation frames and leave PhotoSwipe half-open under the next click.
 - E2E test: `node scripts/e2e/lightbox.mjs --port <cdp port> --uuid <macro block uuid>`. It evaluates inside the plugin iframe through `scripts/e2e/plugin-frame.mjs` (raw CDP; the cross-origin iframe is a separate target that Playwright does not list as a frame) and asserts open, Esc, zoom, PhotoSwipe's `opener.isOpen`, and close.
 
@@ -108,6 +125,7 @@ These skills are available and relevant to this project:
 - `resize: both`, not `horizontal`, on purpose. The SVG keeps its aspect ratio, so a horizontal-only grip moves *up* as the width shrinks; the release then lands on whatever sits below the diagram and the click's target becomes the block, which the bridge never sees. With `both`, the corner tracks the pointer on both axes. Only the width is persisted; the re-render after commit drops the dragged height.
 - Width is read back by `parseWidthArg()` from the macro's second positional arg — clamped, falling back to `DEFAULT_DIAGRAM_WIDTH` (250px) when absent or non-numeric. Works in both file-based and DB graphs; no block property or cache is involved.
 - Min: 200px (`MIN_DIAGRAM_WIDTH`), max: `MAX_DIAGRAM_WIDTH` (1200px) in the handler and `max-width: 100%` in CSS.
+- **The SVG is drawn at its natural size, never scaled up** (`.bermaid-container svg { width: auto; max-width: 100% }`): it shrinks with the wrapper but stops at its `width` attribute. Pele's output is compact (a small state diagram is ~120 px wide), so filling the wrapper blew it up 2×. Dragging the grip past the natural width grows the box, not the diagram; the lightbox shows it larger. The sizing is CSS-only on purpose: clamping the wrapper instead would let a plain click commit a new width, because the click handler clamps to `MIN_DIAGRAM_WIDTH`.
 - E2E test: `node scripts/e2e/resize.mjs --port <cdp port> --uuid <macro block uuid> [--dx N]` performs a real pointer drag on the grip against a running Logseq instance and asserts live width, persistence, macro rewrite, aspect ratio, and that the block did not enter edit mode. Run it from an **installed** copy (see the test loop below); it was red on the slider build and the edge handles, green on the grip.
 
 ### Caching
@@ -115,7 +133,7 @@ These skills are available and relevant to this project:
 | Cache           | Type                              | Key        | Cap                       | Purpose                                                |
 | --------------- | --------------------------------- | ---------- | ------------------------- | ------------------------------------------------------ |
 | `svgCache`      | `CappedMap<string, string>`       | block UUID | 200 (`SVG_CACHE_CAP`)     | Avoid re-render for copy-to-PNG                        |
-| `renderedSlots` | `CappedMap<string, RenderedSlot>` | block UUID | 200 (`RENDERED_SLOTS_CAP`) | Track slots for theme-change re-rendering and live edit |
+| `renderedSlots` | `CappedMap<string, RenderedSlot>` | block UUID | 200 (`RENDERED_SLOTS_CAP`) | Track slots for theme-change re-rendering and live edit, including slots that are still empty (`mermaidSyntax: ''`; skipped on theme change) |
 
 `CappedMap` extends `Map` with oldest-entry eviction when the cap is exceeded. Caps live in `src/constants.ts`.
 
@@ -123,14 +141,21 @@ Width is **not** cached — it is read from the macro arg on every render (see R
 
 ### Theme Resolution
 
-`buildRenderOptions()` checks `settings.theme`:
+`src/theme.ts`:
 
-- `"auto"` → maps to `github-light` or `tokyo-night` based on `currentThemeMode`
-- Any named theme → passed directly to `beautiful-mermaid`
+- `resolveThemeName(theme, mode)` — `"auto"` → `github-light` or `tokyo-night` (`AUTO_THEME` in `src/constants.ts`); a named theme passes through.
+- `PALETTES` — the 14 palettes (`bg`, `fg`, and optional `line`, `accent`, `muted`), carried over from beautiful-mermaid's `THEMES` so the setting kept its meaning.
+- `applyTheme(svg, name, transparent)` — Pele has **no theme option**; colors are CSS variables. The palette is prepended to the root `<svg style>` as `--pele-*` variables, because the lightbox and copy-to-PNG load the SVG as an image, where outside CSS never reaches. Missing colors are mixed from `fg` into `bg` with beautiful-mermaid's percentages (line 50, accent 85, muted 40; node fill 3, group band 5, border 20). A `<style>` rule recolors **solid** arrowheads (`.pele-marker[fill="var(--_l)"]`) to the accent, as beautiful-mermaid drew them; hollow and stroke-only markers keep theirs. `background:var(--pele-bg)` is added only when *Transparent background* is off (Pele paints none).
+- Chart series colors (pie, xychart, …) use Pele's `--pele-series-*` defaults, not the palette.
 
-When theme mode changes, `onThemeModeChanged` re-renders all diagrams tracked in `renderedSlots`.
+When theme mode changes, `onThemeModeChanged` re-renders all diagrams tracked in `renderedSlots`. Setting names (`THEME_CHOICES`) are in `src/constants.ts`.
 
-All theme names are defined in `src/constants.ts`.
+### Rendering engine (Pele)
+
+- `pele` is pinned to an **exact** version. Treat every upgrade as a release gate: run all examples from Mermaid's docs (`tests/corpus/*-docs.json` in the Pele repo, 522 at 1.6.0) and review one rendered example per type (contact sheets); see `docs/PELE_EXPERIMENT.md` Round 3.
+- `renderAsync` from `pele/lazy` loads only the chunk for the diagram type being drawn (core ~37 KB, types 1–45 KB each).
+- The `-beta` keywords Pele accepts (`xychart-beta`, `architecture-beta`, …) are Mermaid's own; they say nothing about Pele's implementation.
+- There is deliberately **no engine setting**: beautiful-mermaid drew only 6 of the 33 types, so a fallback would cover only the mature ones (decision, 2026-10-17).
 
 ### Copy to PNG
 
@@ -145,13 +170,16 @@ All theme names are defined in `src/constants.ts`.
 | File                         | Purpose                                                                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/index.ts`               | Plugin entry — settings, hooks, event handlers, resize commit, slash command                                                        |
-| `src/macro.ts`               | Pure helpers: `parseWidthArg`, `extractMermaidSyntax`, `getBlockText`, `BERMAID_MACRO_RE`; unit-tested in `src/macro.test.ts`      |
+| `src/macro.ts`               | Pure helpers: `parseWidthArg`, `extractMermaidSyntax`, `getBlockText`, `BERMAID_MACRO_RE`, `isMermaidCodeBlock`; unit-tested in `src/macro.test.ts` |
+| `src/theme.ts`               | Palettes, `resolveThemeName`, `applyTheme` (see Theme Resolution); unit-tested in `src/theme.test.ts`                                |
+| `src/utils/clock.ts`         | Worker-backed `sleep` / `delay` (cancellable), `setTimeout` fallback; unit-tested in `src/utils/clock.test.ts`                      |
 | `src/lightbox.ts`            | PhotoSwipe viewer in the plugin's own iframe (main UI); see Lightbox                                                                |
-| `src/render.ts`              | Mermaid render pipeline — lazy-loads `beautiful-mermaid`, builds options, trims SVG, copy-to-PNG                                     |
+| `src/render.ts`              | Render pipeline — `renderAsync` from `pele/lazy`, then `applyTheme`; copy-to-PNG                                                      |
 | `src/cache.ts`               | `CappedMap` LRU + the two cache instances (`svgCache`, `renderedSlots`) and the `RenderedSlot` type                                  |
-| `src/constants.ts`           | Theme choices, auto-theme mapping, default width (250px)                                                                             |
-| `src/styles.ts`              | CSS injected into Logseq: wrapper, native resize grip, copy button                                                                  |
+| `src/constants.ts`           | Theme setting choices, auto-theme mapping, widths, cache caps                                                                        |
+| `src/styles.ts`              | CSS injected into Logseq: wrapper, native resize grip, natural-size SVG, copy button, hint/error states                              |
 | `src/utils/svg.ts`           | SVG to PNG Blob conversion                                                                                                           |
+| `src/__sdk_guard__.ts`       | Compile-time floor for `@logseq/libs` (references a 0.3.x API): `npm run typecheck` fails on a downgrade below `minSDKVersion` |
 | `src/utils/text.ts`          | `escapeHtml()` for safe error message display                                                                                        |
 | `vite.config.ts`             | Vite config; terser minification, no sourcemaps; dev server on port 8080                                                             |
 | `vite-logseq-safe-plugin.ts` | Custom Vite plugin replacing `vite-plugin-logseq`; handles dev-server CORS, HMR safety, and writes `dist/index.html` on watch builds |
@@ -159,7 +187,10 @@ All theme names are defined in `src/constants.ts`.
 | `scripts/e2e/resize.mjs`     | E2E drag-to-resize test against a running Logseq instance over CDP; red/green gate for the installed (cross-origin) path             |
 | `scripts/e2e/lightbox.mjs`   | E2E lightbox test (open, Esc, zoom, close) from the installed path                                                                   |
 | `scripts/e2e/plugin-frame.mjs` | Raw-CDP helper to evaluate inside the cross-origin plugin iframe (Node's built-in WebSocket)                                       |
-| `docs/`                      | Internal reference docs (`REQUIREMENTS.md`, `MARKETPLACE_SUBMISSION.md`)                                                             |
+| `scripts/e2e/sizing.mjs`     | E2E: no diagram drawn larger than its natural size                                                                                   |
+| `scripts/e2e/slash-latency.mjs` | E2E: `/bermaid` per-step timeline and thresholds, then type → Esc → diagram                                                       |
+| `scripts/e2e/convert.mjs`    | E2E: Render as Bermaid diagram (needs a visible window)                                                                              |
+| `docs/`                      | Internal reference docs (`REQUIREMENTS.md`, `MARKETPLACE_SUBMISSION.md`), decision records (`PELE_EXPERIMENT.md`, `INSERT_FLOW_ASSESSMENT.md`), README media |
 
 ### Build
 
@@ -181,7 +212,12 @@ Pushing a `v*` tag triggers `.github/workflows/publish.yml` which builds, packag
 - **`updateBlock` ignored while editing** — call `exitEditingMode(true)` before `updateBlock`; the live editor state takes precedence over SDK writes.
 - **DB timing / "entity id, got 0"** — `insertBlock` and `upsertBlockProperty` can fail if the parent block hasn't been committed to the DB yet. Use retry loops with `sleep(300)` between attempts.
 - **`ensureHostScope()` sync/async duality** — returns a plain value in some Logseq versions and a Promise in others. Always wrap in `Promise.resolve()` or `try/catch`, never chain `.catch()` directly.
-- **Renderer slot fires before child exists** — `onMacroRendererSlotted` can trigger before a child block inserted by the slash command is committed. The renderer retries child lookup for up to 1.5s.
+- **Renderer slot fires before child exists** — `onMacroRendererSlotted` can trigger before a child block inserted by the slash command is committed. The renderer does not poll for it: the slot is tracked with empty source and shows a hint, and the child's arrival reaches it through `DB.onChanged`. (Before v0.6.0 an untracked "Child block is empty" slot never updated until a page reload.)
+- **Plugin iframe timers run at 1 Hz** — the plugin iframe is `visibilityState: hidden` whenever it shows no main UI, and Chromium aligns its timers to 1-second wake-ups: `setTimeout(100)` takes ~1000 ms (`setTimeout(0)`, microtasks and `MessageChannel` are unaffected; SDK round-trips take 3–45 ms). This made `/bermaid` take 2.3–3 s. **Never use `setTimeout` for a wait, retry, debounce or poll** — use `sleep` / `delay` from `src/utils/clock.ts`, whose timers run in a Worker (100 ms → ~102 ms).
+- **A code block's editor writes to the DB only when it is left** — CodeMirror commits on Esc/blur; while it has focus the block's `title` is unchanged. No preview mid-typing is possible through `DB.onChanged`; measure latency from Esc.
+- **The plugin cannot focus a code block's editor** — `Editor.editBlock` on a code block leaves focus on `<body>`. Logseq's own `/code` does focus it, which is why "Render as Bermaid diagram" exists.
+- **`/code` sets no language** — `:logseq.property.code/lang` is absent, so detection by language alone misses it; `isMermaidCodeBlock` falls back to Pele's `detectType`.
+- **`insert_block` with a filled fence strips leading indentation** — `insertBlock(uuid, "```mermaid\n…\n```")` stores `"  id3[…]"` as `"id3[…]"`, breaking kanban/mindmap. `updateBlock` on an existing code block keeps it. The plugin only ever inserts an empty fence; tests that seed diagrams must insert an empty fence and `updateBlock` the code.
 - **`provideUI` template is a string** — no JSX; HTML must be a template literal. Use `data-on-click` attributes for event handlers registered via `provideModel()`.
 - **Renderer slot `display: inline-flex`** — SVGs and large content need `width: 100%` CSS override to fill the slot.
 - **Macro args are always strings** — `payload.arguments` hands back strings even for numeric args. Always coerce with `Number()` and validate with `Number.isFinite()` before use; see `parseWidthArg()`.

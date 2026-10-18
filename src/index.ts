@@ -1,12 +1,13 @@
 import '@logseq/libs'
 import type { BlockEntity, BlockUUIDTuple } from '@logseq/libs/dist/LSPlugin'
 import { THEME_CHOICES, MIN_DIAGRAM_WIDTH, MAX_DIAGRAM_WIDTH } from './constants'
-import { parseWidthArg, extractMermaidSyntax, getBlockText, BERMAID_MACRO_RE } from './macro'
+import { parseWidthArg, extractMermaidSyntax, getBlockText, BERMAID_MACRO_RE, isMermaidCodeBlock } from './macro'
 import { svgCache, renderedSlots } from './cache'
 import { renderDiagram, copyImageToClipboard, type RenderConfig } from './render'
 import { BERMAID_STYLES } from './styles'
 import { openLightbox, closeLightbox } from './lightbox'
 import { escapeHtml } from './utils/text'
+import { sleep, delay } from './utils/clock'
 
 /**
  * What the plugin bridge hands a `data-on-*` handler. Verified empirically
@@ -22,8 +23,6 @@ interface BridgeEvent {
   dataset?: Record<string, string | undefined>
   rect?: { width: number; height: number; x: number; y: number }
 }
-
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 /** Retry an async function up to `attempts` times with `delay` ms between tries. */
 async function retry<T>(
@@ -111,18 +110,17 @@ async function rerenderTrackedDiagram(macroUuid: string): Promise<void> {
   }
 }
 
-// Per-macro debounce timers for live re-rendering on source edits.
-const rerenderTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// Per-macro debounce for live re-rendering on source edits (cancel functions).
+const rerenderTimers = new Map<string, () => void>()
 
 function scheduleRerender(macroUuid: string): void {
-  const existing = rerenderTimers.get(macroUuid)
-  if (existing) clearTimeout(existing)
+  rerenderTimers.get(macroUuid)?.()
   rerenderTimers.set(
     macroUuid,
-    setTimeout(() => {
+    delay(350, () => {
       rerenderTimers.delete(macroUuid)
       void rerenderTrackedDiagram(macroUuid)
-    }, 350),
+    }),
   )
 }
 
@@ -159,7 +157,6 @@ function buildDiagramHtml(blockUuid: string, svg: string, width: number): string
 }
 
 async function main() {
-  console.log('Bermaid plugin loaded!')
   const offHooks: Array<() => void> = []
 
   // --- Settings ---
@@ -171,7 +168,7 @@ async function main() {
       enumPicker: 'select',
       default: 'auto',
       title: 'Theme',
-      description: 'Beautiful-mermaid theme. "auto" matches Logseq light/dark mode.',
+      description: 'Diagram color theme. "auto" matches Logseq light/dark mode.',
     },
     {
       key: 'transparentBg',
@@ -226,6 +223,7 @@ async function main() {
     // Re-render all tracked diagrams with the new theme
     const config = getRenderConfig()
     for (const [uuid, { slot, mermaidSyntax, width }] of renderedSlots) {
+      if (!mermaidSyntax) continue // still showing the "type Mermaid" hint
       renderDiagram(mermaidSyntax, config).then((svg) => {
         svgCache.set(uuid, svg)
         renderSlot(uuid, slot, buildDiagramHtml(uuid, svg, width))
@@ -270,8 +268,8 @@ async function main() {
     closeLightbox()
     // Pending debounce timers outlive the hooks below; without this they fire
     // against a torn-down plugin and call provideUI on a dead slot.
-    for (const timer of rerenderTimers.values()) {
-      clearTimeout(timer)
+    for (const cancel of rerenderTimers.values()) {
+      cancel()
     }
     rerenderTimers.clear()
     for (const off of offHooks) {
@@ -300,39 +298,33 @@ async function main() {
     renderSlot(blockUuid, slot, `<div class="bermaid-loading">Rendering mermaid diagram...</div>`)
 
     try {
-      // The renderer slot can fire before the child mermaid block has been
-      // committed (e.g. immediately after /bermaid inserts the macro).
-      // Retry for up to ~1.5 s so we don't flash the "no child" error.
       const block = await retry(
-        async () => {
-          const b = await logseq.Editor.getBlock(blockUuid, { includeChildren: true }).catch(() => null)
-          return b?.children?.length ? b : null
-        },
+        async () => logseq.Editor.getBlock(blockUuid, { includeChildren: true }).catch(() => null),
         { attempts: 6, delay: 250 },
       )
-      const children: Array<BlockEntity | BlockUUIDTuple> = block?.children || []
-
       if (!block) {
         renderSlot(blockUuid, slot, `<div class="bermaid-error">Block not found — try reloading the page.</div>`)
         return
       }
 
-      if (children.length === 0) {
-        renderSlot(blockUuid, slot, `<div class="bermaid-error">No child block found — add a child block with Mermaid syntax (e.g. "graph TD; A-->B").</div>`)
-        return
-      }
-
-      const mermaidSyntax = extractMermaidSyntax(children)
-      if (!mermaidSyntax) {
-        renderSlot(blockUuid, slot, `<div class="bermaid-error">Child block is empty — add Mermaid syntax (e.g. "graph TD; A-->B").</div>`)
-        return
-      }
-
       const width = parseWidthArg(payload.arguments)
-      const svg = await renderDiagram(mermaidSyntax, getRenderConfig())
-      svgCache.set(blockUuid, svg)
+      const children: Array<BlockEntity | BlockUUIDTuple> = block.children || []
+      const mermaidSyntax = extractMermaidSyntax(children)
+      // Track before rendering, so a diagram that is still empty or not yet valid
+      // (e.g. right after /bermaid, before its child exists) picks up the user's
+      // edits through DB.onChanged instead of waiting for a page reload.
       renderedSlots.set(blockUuid, { slot, mermaidSyntax, width })
 
+      if (!mermaidSyntax) {
+        const hint = children.length
+          ? 'Type Mermaid in the code block below.'
+          : 'Add a child code block with Mermaid (e.g. "graph TD; A-->B").'
+        renderSlot(blockUuid, slot, `<div class="bermaid-hint">${hint}</div>`)
+        return
+      }
+
+      const svg = await renderDiagram(mermaidSyntax, getRenderConfig())
+      svgCache.set(blockUuid, svg)
       renderSlot(blockUuid, slot, buildDiagramHtml(blockUuid, svg, width))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -342,8 +334,8 @@ async function main() {
 
   const insertBermaidTemplate = async (targetUuid?: string) => {
     try {
-      await sleep(100)
-
+      // No fixed waits: SDK round-trips take 3-45 ms, and any setTimeout here
+      // costs a full second (the hidden iframe's timers run at 1 Hz).
       let parentBlock: BlockEntity | null = null
       if (targetUuid) {
         parentBlock = await retry(
@@ -373,7 +365,6 @@ async function main() {
       // updateBlock on a block that is actively being edited is silently
       // ignored (the live editor state takes precedence).
       await logseq.Editor.exitEditingMode(true).catch(() => null)
-      await sleep(100)
 
       try {
         await retry(
@@ -392,14 +383,9 @@ async function main() {
 
       const childTemplate = '```mermaid\n\n```'
 
-      // Wait for the parent block update to be committed to the DB before inserting a child.
-      // In DB-based graphs, the entity may not be persisted immediately,
-      // causing "entity id, got 0" errors.
-      await sleep(300)
-
-      // Re-fetch the parent block to ensure we have the latest persisted UUID
-      const refreshed = await logseq.Editor.getBlock(parentBlock.uuid).catch(() => null)
-      const insertUuid = refreshed?.uuid ?? parentBlock.uuid
+      // "entity id, got 0" (parent not committed yet) is retried by isRetryableDbError;
+      // it did not occur in any prototype run without the old fixed 300 ms wait.
+      const insertUuid = parentBlock.uuid
 
       const childBlock = await retry(
         async () => {
@@ -422,6 +408,37 @@ async function main() {
     }
   }
 
+  // Wrap an existing mermaid code block in a diagram: insert the macro just above
+  // it and move the code block under it. The code itself is never rewritten, so
+  // indentation (kanban, mindmap) survives. Starting from a code block lets
+  // Logseq's own /code command focus the editor, which a plugin cannot do.
+  const renderCodeBlockAsDiagram = async (uuid: string) => {
+    try {
+      const block = await logseq.Editor.getBlock(uuid)
+      const { detectType } = await import('pele/lazy')
+      if (!isMermaidCodeBlock(block, (code) => detectType(code) !== null)) {
+        logseq.UI.showMsg('Bermaid: not a mermaid code block', 'warning')
+        return
+      }
+      const parentId = (block!.parent as { id?: number } | undefined)?.id
+      const parent = parentId !== undefined ? await logseq.Editor.getBlock(parentId).catch(() => null) : null
+      if (parent && BERMAID_MACRO_RE.test(getBlockText(parent))) {
+        logseq.UI.showMsg('Bermaid: already a diagram', 'info')
+        return
+      }
+      await logseq.Editor.exitEditingMode(false).catch(() => null)
+      const macro = await logseq.Editor.insertBlock(uuid, '{{renderer :bermaid}}', { before: true, sibling: true })
+      if (!macro?.uuid) throw new Error('could not insert the diagram block')
+      await logseq.Editor.moveBlock(uuid, macro.uuid, { children: true })
+    } catch (err) {
+      console.error('Bermaid: failed to render code block as diagram', err)
+      logseq.UI.showMsg('❌ Failed to render as Bermaid diagram', 'error')
+    }
+  }
+
+  logseq.Editor.registerBlockContextMenuItem('Render as Bermaid diagram', ({ uuid }) =>
+    renderCodeBlockAsDiagram(uuid))
+
   // --- Slash Command ---
   logseq.Editor.registerSlashCommand('bermaid', async (event) => {
     const targetUuid = event?.uuid ?? (event as { blockUuid?: string } | undefined)?.blockUuid
@@ -430,7 +447,6 @@ async function main() {
     }, 0)
   })
 
-  console.log('Bermaid plugin ready!')
 }
 
 logseq.ready(main).catch(console.error)

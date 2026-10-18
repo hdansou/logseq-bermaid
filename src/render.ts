@@ -1,43 +1,29 @@
-import type { RenderOptions } from 'beautiful-mermaid'
-import { AUTO_THEME } from './constants'
+import { applyTheme, resolveThemeName } from './theme'
 import { svgCache } from './cache'
 import { svgToPngBlob } from './utils/svg'
 
 export interface RenderConfig {
   /** Logseq theme mode: 'light' | 'dark'. Used when `theme` is 'auto'. */
   themeMode: string
-  /** Settings.theme — 'auto' or a beautiful-mermaid theme name. */
+  /** Settings.theme — 'auto' or a palette name from src/theme.ts. */
   theme: string
   transparentBg: boolean
 }
 
-// Lazy-load beautiful-mermaid (~1.6 MB) — defers the heavy bundle until
-// the user actually renders a {{renderer :bermaid}} macro.
-let beautifulMermaidPromise: Promise<typeof import('beautiful-mermaid')> | null = null
-function loadBeautifulMermaid() {
-  if (!beautifulMermaidPromise) {
-    beautifulMermaidPromise = import('beautiful-mermaid')
+// pele/lazy loads each diagram type's code on first use, so only the types
+// actually present in the graph are ever fetched.
+let pelePromise: Promise<typeof import('pele/lazy')> | null = null
+function loadPele() {
+  if (!pelePromise) {
+    pelePromise = import('pele/lazy')
   }
-  return beautifulMermaidPromise
-}
-
-function buildRenderOptions(
-  THEMES: Record<string, RenderOptions>,
-  config: RenderConfig,
-): RenderOptions {
-  const resolvedTheme = config.theme === 'auto'
-    ? AUTO_THEME[config.themeMode] || 'tokyo-night'
-    : config.theme
-  return {
-    transparent: config.transparentBg,
-    ...(THEMES?.[resolvedTheme] ?? {}),
-  }
+  return pelePromise
 }
 
 export async function renderDiagram(mermaidSyntax: string, config: RenderConfig): Promise<string> {
-  const { renderMermaid, THEMES } = await loadBeautifulMermaid()
-  const opts = buildRenderOptions(THEMES as unknown as Record<string, RenderOptions>, config)
-  return renderMermaid(mermaidSyntax, opts)
+  const { renderAsync } = await loadPele()
+  const { svg } = await renderAsync(mermaidSyntax)
+  return applyTheme(svg, resolveThemeName(config.theme, config.themeMode), config.transparentBg)
 }
 
 /** Copy a previously-rendered SVG as PNG to the system clipboard. */

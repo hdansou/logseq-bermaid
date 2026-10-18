@@ -1,19 +1,23 @@
 # Bermaid
 
-Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [beautiful-mermaid](https://github.com/lukilabs/beautiful-mermaid) renderer ([npm](https://www.npmjs.com/package/beautiful-mermaid)).
+Bermaid (**Better Mermaid**) is a Logseq plugin that renders Mermaid diagrams with [Pele](https://github.com/obsidianmd/pele) ([npm](https://www.npmjs.com/package/pele)), a fast, lightweight Mermaid renderer that supports every diagram type built into Mermaid 12.1.
 
-![Bermaid rendering a top-down flowchart in light mode](docs/screenshot-light-td.png)
+![Bermaid in a Logseq journal: /bermaid, type a flowchart, resize it, turn a /code block into a pie chart with Render as Bermaid diagram, switch to dark mode, open the lightbox](docs/demo.gif)
 
-![Bermaid rendering a left-right decision flow in dark mode](docs/screenshot-dark-lr.png)
+![A Logseq journal page with a Bermaid flowchart and pie chart, light mode](docs/screenshot-light.png)
+
+![The same journal page in dark mode](docs/screenshot-dark.png)
 
 ## Features
 
 - Render diagrams from `{{renderer :bermaid}}` using child block content
 - `/bermaid` slash command to insert an empty diagram block, ready for your Mermaid syntax
+- **Render as Bermaid diagram** — right-click the bullet of any Mermaid code block to turn it into a diagram, including code you pasted or wrote before
+- Every diagram type built into Mermaid 12.1: flowchart, sequence, class, state, ER, Gantt, pie, mindmap, timeline, C4, kanban, sankey and more
 - **Lightbox** — click any diagram to view it full-screen in the same viewer Logseq uses for images (PhotoSwipe): zoom, pan, Esc to close
 - Copy rendered diagrams as PNG via hover button
 - Drag the corner grip to resize diagrams
-- **Live re-render** — edit a diagram's source and the render updates in place, no reload
+- **Live re-render** — edit a diagram's source and the render updates in place when you leave the code block, no reload
 - Custom width persists in the macro itself (`{{renderer :bermaid, 500}}`), so it survives in both file-based and DB graphs
 - Theme support with `auto` mode that follows Logseq light/dark mode
 - Optional transparent background setting
@@ -43,8 +47,16 @@ Bermaid is a Logseq plugin that renders beautiful Mermaid diagrams with the [bea
 1. In a block, type `/bermaid` and run the command.
 2. Bermaid inserts:
    - `{{renderer :bermaid}}` in the current block
-   - A child block with starter Mermaid syntax
-3. Edit the child block text and the diagram updates on render.
+   - An empty ```` ```mermaid ```` code block under it
+3. Click into the code block, write your diagram, and press Esc: the diagram appears.
+
+### From an existing code block
+
+1. Make a code block with `/code` (the cursor lands in it), or use one you already have.
+2. Type or paste your Mermaid diagram and press Esc.
+3. Right-click the block's bullet and choose **Render as Bermaid diagram**.
+
+Bermaid adds `{{renderer :bermaid}}` above the code block and moves the code block under it, unchanged. It works on code blocks marked `mermaid` and on code blocks with no language whose content is a Mermaid diagram; anything else is left alone.
 
 ### Manual macro
 
@@ -74,7 +86,7 @@ graph TD
 
 ## Settings
 
-- **Theme**: `auto` or a specific beautiful-mermaid theme
+- **Theme**: `auto` (follows Logseq light/dark mode) or a named theme: Tokyo Night, Catppuccin, Nord, Dracula, GitHub, Solarized, One Dark and more
 - **Transparent Background**: controls SVG/PNG background transparency
 
 ## Development
@@ -124,8 +136,9 @@ Detailed steps and a manifest template are in [docs/MARKETPLACE_SUBMISSION.md](d
 
 ## Credits
 
-- [**beautiful-mermaid**](https://github.com/lukilabs/beautiful-mermaid) by [lukilabs](https://github.com/lukilabs) — the SVG rendering engine that does all the heavy lifting. Bermaid is a thin Logseq integration around it; the diagrams, themes, and styling come from beautiful-mermaid.
-- [**Mermaid**](https://github.com/mermaid-js/mermaid) — the diagramming language beautiful-mermaid is built on.
+- [**Pele**](https://github.com/obsidianmd/pele) by [Obsidian](https://github.com/obsidianmd) — the SVG rendering engine that does the heavy lifting: parsing, layout and drawing for every Mermaid diagram type.
+- [**beautiful-mermaid**](https://github.com/lukilabs/beautiful-mermaid) by [lukilabs](https://github.com/lukilabs) — Bermaid's engine up to v0.5; its color themes and the way it derives fills, borders and arrow colors live on in Bermaid's theme setting.
+- [**Mermaid**](https://github.com/mermaid-js/mermaid) — the diagramming language.
 
 ## License
 

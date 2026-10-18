@@ -2,6 +2,7 @@ import PhotoSwipeLightbox from 'photoswipe/lightbox'
 import PhotoSwipe from 'photoswipe'
 import 'photoswipe/style.css'
 import { svgSize } from './utils/svg'
+import { delay } from './utils/clock'
 
 /**
  * Fullscreen diagram viewer.
@@ -66,12 +67,12 @@ export function openLightbox(svg: string): void {
   // acts on it); until the host adds its 'visible' class this document is
   // display:none, has a 0x0 viewport, and the image PhotoSwipe starts loading
   // in it ends up broken (complete, naturalWidth 0). rAF does not run in a
-  // hidden frame, so poll with a timer.
+  // hidden frame, and its own timers fire at 1 Hz, so poll on the worker clock.
   const deadline = Date.now() + 3000
   const open = () => {
     if (current !== lightbox) return
     if ((window.innerWidth === 0 || window.innerHeight === 0) && Date.now() < deadline) {
-      setTimeout(open, 16)
+      delay(16, open)
       return
     }
     lightbox.init()

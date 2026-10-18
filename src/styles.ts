@@ -46,7 +46,11 @@ export const BERMAID_STYLES = `
     cursor: zoom-in;
   }
   .bermaid-container svg {
-    width: 100%;
+    /* Natural size (the width attribute), shrinking with the wrapper but never
+       scaled up: Pele's diagrams are compact, and filling a 250px wrapper blew a
+       122px state diagram up to 2x. */
+    width: auto;
+    max-width: 100%;
     /* height:auto + the viewBox's intrinsic ratio keeps resizing proportional. */
     height: auto;
     display: block;
@@ -89,7 +93,8 @@ export const BERMAID_STYLES = `
     display: block;
     pointer-events: none;
   }
-  .bermaid-loading {
+  .bermaid-loading,
+  .bermaid-hint {
     color: var(--ls-secondary-text-color, #999);
     font-style: italic;
     padding: 8px;
