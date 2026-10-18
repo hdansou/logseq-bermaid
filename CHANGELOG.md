@@ -22,7 +22,7 @@ Bermaid now stands for **Better Mermaid**: a new rendering engine that draws eve
 - **Themes keep their names and colors.** All 14 themes and `auto` work as before, with beautiful-mermaid's palettes and its rules for fills, borders and accent-colored arrowheads. The colors travel inside the SVG, so the lightbox and Copy as PNG match the page. Pie and other chart series use Pele's default series colors.
 - **`/bermaid` is about 13× faster.** The empty code block appears in ~0.17 s instead of 2.3–3.1 s, and the diagram shows ~0.4 s after you leave the code block. The diagram area shows a neutral "Type Mermaid in the code block below" hint instead of a red "Child block is empty" error.
 - **New icon:** a diagram node forking into two, the fork shaped like a mermaid's tail.
-- **Bermaid = Better Mermaid** in the plugin description, README and docs. The plugin id (`logseq-bermaid`) and the `{{renderer :bermaid}}` macro are unchanged; existing diagrams keep working.
+- **Bermaid = Better Mermaid** in the plugin title (now "Bermaid - Better Mermaid"), description, README and docs. The plugin id (`logseq-bermaid`) and the `{{renderer :bermaid}}` macro are unchanged; existing diagrams keep working.
 
 ### Fixed
 

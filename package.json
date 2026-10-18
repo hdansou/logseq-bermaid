@@ -52,7 +52,7 @@
   },
   "logseq": {
     "id": "logseq-bermaid",
-    "title": "Bermaid - Diagrams",
+    "title": "Bermaid - Better Mermaid",
     "description": "Bermaid (Better Mermaid): fast, lightweight Mermaid diagrams for Logseq, rendered with Pele",
     "icon": "./icon.svg",
     "main": "dist/index.html",
